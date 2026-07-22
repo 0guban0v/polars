@@ -1,0 +1,80 @@
+{
+  "adaptive_queries": [],
+  "data": {
+    "correlation": "independent",
+    "mask_topology": "random",
+    "path": "/private/tmp/tpch-sf1-28304/lineitem-28304.parquet",
+    "row_group_size": 1000000,
+    "row_groups": 7,
+    "rows": 6001215,
+    "selectivity": {
+      "all_conjunction": 0.021390835022574595,
+      "quantity": 0.599716557397127,
+      "ship_conjunction": 0.03572226624108618,
+      "shipinstruct": 0.24995738362981496,
+      "shipmode": 0.1429883781867505
+    },
+    "shipinstruct_per_mille": 250,
+    "shipmode_per_mille": 142
+  },
+  "environment": {
+    "issue_28304_adaptive": null,
+    "issue_28304_stages": null,
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "polars_max_threads": "8",
+    "polars_thread_pool_size": 8,
+    "polars_version": "1.43.0",
+    "python": "3.13.11 (main, Jan 19 2026, 13:46:40) [Clang 17.0.0 (clang-1700.6.3.2)]"
+  },
+  "expected_result": 1991254,
+  "measurement": {
+    "iterations": 500,
+    "rotated_query_order": true,
+    "warmups": 20
+  },
+  "plans": {
+    "all_pushed": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/tpch-sf1-28304/lineitem-28304.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 6001215",
+    "staged_candidate": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/tpch-sf1-28304/lineitem-28304.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 6001215"
+  },
+  "queries": {
+    "all_pushed": {
+      "cpu_seconds": {
+        "max": 0.02263,
+        "median": 0.018563999999999997,
+        "min": 0.018006,
+        "p25": 0.018417,
+        "p75": 0.018834,
+        "p95": 0.020564
+      },
+      "wall_seconds": {
+        "max": 0.004933167,
+        "median": 0.0035478335,
+        "min": 0.003390833,
+        "p25": 0.003508625,
+        "p75": 0.003621625,
+        "p95": 0.003810083
+      }
+    },
+    "staged_candidate": {
+      "cpu_seconds": {
+        "max": 0.021781,
+        "median": 0.016686,
+        "min": 0.016079,
+        "p25": 0.016524,
+        "p75": 0.016863,
+        "p95": 0.017742
+      },
+      "wall_seconds": {
+        "max": 0.00484,
+        "median": 0.0030394165000000002,
+        "min": 0.002864708,
+        "p25": 0.002983917,
+        "p75": 0.003119292,
+        "p95": 0.003369375
+      }
+    }
+  },
+  "stage_specs": {
+    "staged_candidate": "l_shipmode,l_shipinstruct|l_quantity"
+  }
+}

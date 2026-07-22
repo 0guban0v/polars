@@ -140,7 +140,8 @@ Do not propose default staging until all gates pass:
   `results/`.
 - Nine staged-reader integration tests pass.
 - Two-arm elapsed-time policy does not meet 16-thread regression target.
-- Timing matrix still needs rerun after PR #28485 API refactor.
+- Targeted TPC-H, thread-count, and row-group controls were rerun after PR
+  #28485 API refactor; full density/correlation/topology matrix remains stale.
 
 ## Commands
 

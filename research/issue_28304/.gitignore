@@ -4,3 +4,5 @@ __pycache__/
 *.parquet
 *.arrow
 *.ipc
+*.sample
+*.trace

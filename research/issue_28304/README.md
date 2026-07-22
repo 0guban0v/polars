@@ -53,6 +53,10 @@ six two-stage plans, and six fully sequential plans.
   execution order, and records wall and process CPU distributions.
 - `findings.md` contains causal traces, staged oracle results, density
   crossover, mask topology, correlation, TPC-H, and adaptive experiments.
+- `profile_findings.md` explains 16-thread CPU/wall gap using ported benchmarks,
+  stack samples, concurrency traces, and thread/row-group controls.
+- `profile_workload.py` runs isolated all-at-once or staged plans long enough
+  for external profiler attachment.
 - `research_plan.md` documents hypotheses, decision gates, and reproduction
   commands for full matrix.
 - `results/` contains curated raw JSON from final measurement runs. Smoke and
@@ -76,7 +80,8 @@ not discover groups.
 
 ## Measurement boundary
 
-Raw measurements predate replacing `PredicateFilter::input_selection` with
-separate `column_iter_to_arrays_selected` API from PR #28485. Research code now
-uses that API, and nine staged-reader tests pass. Performance measurements have
-not been rerun since that change.
+Original timing matrix predates replacing `PredicateFilter::input_selection`
+with separate `column_iter_to_arrays_selected` API from PR #28485. Research
+code now uses that API, and nine staged-reader tests pass. Targeted TPC-H,
+thread-count, and row-group controls were rerun on ported API; full
+density/correlation/topology matrix has not been rerun.
