@@ -71,6 +71,20 @@ Staging reduces 16-thread latency once more independent row groups are available
 changes row-group boundaries and per-group overhead, so this control supports concurrency
 explanation but does not isolate row-group count by itself.
 
+Fixed-size control repeats typed SF1 rows, slices to exact row count, and keeps every row group at
+1,000,000 rows:
+
+| Rows | Full row groups | All-at-once wall | Staged wall | Wall change | CPU change | Quantity peak |
+|---:|---:|---:|---:|---:|---:|---:|
+| 7,000,000 | 7 | 3.394 ms | 3.107 ms | -8.5% | -15.7% | 7 |
+| 16,000,000 | 16 | 5.597 ms | 5.188 ms | -7.3% | -11.1% | 15 |
+
+Quantity peak is maximum overlapping `l_quantity` decode tasks across ten traced queries. Original
+6,001,215-row file has six full groups plus 1,215-row tail; its quantity peak is six. Fixed-size
+runs rule out smaller row groups as explanation for recovered wall benefit. They do not establish
+simple count threshold: seven full groups win while using fewer than half of 16-thread pool during
+quantity stage. They also change total input, and CPU reduction is not constant across controls.
+
 ## Stack samples
 
 Exclusive top-of-stack samples were grouped after removing parked/waiting stacks:
@@ -92,33 +106,37 @@ Existing `POLARS_ISSUE_28304_TRACE` instrumentation shows:
 
 - all-at-once reaches 16 concurrent predicate tasks;
 - staged first stage peaks at 14 tasks: two columns across seven row groups;
-- staged quantity stage runs six concurrent full-row-group tasks after first stage completes;
+- staged quantity stage peaks at six tasks on original file;
+- quantity peak rises from six to seven to 15 for original, seven-full-group, and
+  16-full-group files;
 - each full quantity task receives about 35,500–36,000 selected rows instead of 1,000,000;
 - all-at-once overlaps quantity decode with string predicates, while staged plan creates a
   dependency between them.
 
 Quantity work is genuinely reduced. At 16 threads, however, stage boundary removes column-level
-overlap and caps available work below pool width. Saved CPU and lost parallelism approximately
-cancel on wall-time critical path. Thread and row-group controls show saved work reduces latency
-when pool width is lower or more independent row groups are available.
+overlap. On original file, second stage offers only six substantial tasks. Saved CPU and lost
+parallelism approximately cancel on wall-time critical path. Thread and fixed-size controls show
+wall benefit returns when predicate-task supply changes, but task count alone does not predict
+crossover. Task duration, tail balance, and overlap across row groups also affect critical path.
 
 This rejects broad hypothesis that predicate decode is simply off critical path at high thread
-counts. For this workload, critical path depends on available task parallelism: decode savings
-reach wall time until stage serialization prevents executor from using additional threads.
+counts. Evidence supports available parallel work as binding mechanism, where supply includes task
+count, duration, and balance. It does not establish row-group count as sole cause.
 
 ## Policy implication
 
 Per-predicate cost/selectivity metric is insufficient by itself. Grouping policy must also model:
 
 - available row-group parallelism;
+- row-group size and tail imbalance;
 - thread-pool width;
 - concurrent columns inside each group;
 - sequential stage depth;
 - critical-path cost of deferred predicates.
 
-Runnable tasks relative to pool width are a policy input, not a hard threshold: staging still won
-at 12 threads with only six full quantity tasks. All-at-once should remain fallback unless
-predicted saved work exceeds stage-boundary cost with margin.
+Runnable task-time relative to pool width is policy input, not hard task-count threshold: staging
+won at 12 threads with six full quantity tasks and at 16 threads with seven. All-at-once should
+remain fallback unless predicted saved work exceeds stage-boundary cost with margin.
 
 ## Reproduce
 

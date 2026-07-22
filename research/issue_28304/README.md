@@ -57,6 +57,8 @@ six two-stage plans, and six fully sequential plans.
   stack samples, concurrency traces, and thread/row-group controls.
 - `profile_workload.py` runs isolated all-at-once or staged plans long enough
   for external profiler attachment.
+- Fixed-size profile controls repeat typed SF1 rows into 7- and 16-group files;
+  generated Parquet files remain outside repository, while curated JSON stays in `results/`.
 - `research_plan.md` documents hypotheses, decision gates, and reproduction
   commands for full matrix.
 - `results/` contains curated raw JSON from final measurement runs. Smoke and
