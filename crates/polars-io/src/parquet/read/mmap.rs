@@ -6,7 +6,8 @@ use arrow::datatypes::Field;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
-    BasicDecompressor, ColumnChunkMetadata, Filter, PageReader, column_iter_to_arrays,
+    BasicDecompressor, ColumnChunkMetadata, Filter, PageReader, PredicateFilter,
+    column_iter_to_arrays, column_iter_to_arrays_selected,
 };
 use polars_utils::mem::prefetch::prefetch_l2;
 
@@ -72,4 +73,27 @@ pub fn to_deserializer(
         .unzip();
 
     column_iter_to_arrays(columns, types, field, filter)
+}
+
+/// Research-only entry point for staged predicate decoding in #28304.
+pub fn to_deserializer_selected(
+    columns: Vec<(&ColumnChunkMetadata, Buffer<u8>)>,
+    field: Field,
+    predicate: PredicateFilter,
+    input_selection: Bitmap,
+) -> PolarsResult<(Vec<Box<dyn Array>>, Bitmap)> {
+    let (columns, types): (Vec<_>, Vec<_>) = columns
+        .into_iter()
+        .map(|(column_meta, chunk)| {
+            prefetch_l2(&chunk);
+
+            let pages = PageReader::new(Cursor::new(chunk), column_meta, vec![], usize::MAX);
+            (
+                BasicDecompressor::new(pages, vec![]),
+                &column_meta.descriptor().descriptor.primitive_type,
+            )
+        })
+        .unzip();
+
+    column_iter_to_arrays_selected(columns, types, field, predicate, input_selection)
 }

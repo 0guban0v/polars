@@ -384,6 +384,7 @@ impl ParquetReadImpl {
             predicate_field_indices,
             non_predicate_field_indices,
             target_values_per_thread,
+            issue_28304_adaptive_state: Default::default(),
         }
     }
 }

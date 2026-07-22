@@ -3194,6 +3194,73 @@ def test_unspecialized_decoding_prefiltering() -> None:
     assert_frame_equal(result, df.filter(expr))
 
 
+@pytest.mark.parametrize(
+    "stages",
+    [
+        "value,b,flag",
+        "value|b,flag",
+        "b,flag|value",
+        "value|b|flag",
+        "flag|b|value",
+    ],
+)
+def test_selected_predicate_stages_28304(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, stages: str
+) -> None:
+    rows = 10_000
+    df = pl.DataFrame(
+        {
+            "value": [None if i % 17 == 0 else i % 101 for i in range(rows)],
+            "b": [None if i % 19 == 0 else f"s{i % 23}" for i in range(rows)],
+            "flag": [None if i % 29 == 0 else i % 3 != 0 for i in range(rows)],
+            "payload": range(rows),
+        }
+    )
+    path = tmp_path / "selected-predicate-stages.parquet"
+    df.write_parquet(path, row_group_size=1_000)
+
+    predicate = (
+        pl.col("value").is_between(20, 80)
+        & pl.col("b").is_in(["s3", "s7", "s11"])
+        & pl.col("flag")
+    )
+    query = pl.scan_parquet(path, parallel="prefiltered").filter(predicate)
+    expected = query.collect(engine="streaming")
+
+    plmonkeypatch.setenv("POLARS_ISSUE_28304_STAGES", stages)
+    actual = query.collect(engine="streaming")
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize("first_predicate", [pl.col("value") >= 0, pl.col("value") < 0])
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_selected_predicate_dense_and_empty_input_28304(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    first_predicate: pl.Expr,
+    adaptive: bool,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "value": range(10_000),
+            "b": [f"s{i % 5}" for i in range(10_000)],
+            "payload": range(10_000),
+        }
+    )
+    path = tmp_path / "selected-predicate-dense-empty.parquet"
+    df.write_parquet(path, row_group_size=1_000)
+
+    predicate = first_predicate & (pl.col("b") == "s3")
+    query = pl.scan_parquet(path, parallel="prefiltered").filter(predicate)
+    expected = query.collect(engine="streaming")
+
+    plmonkeypatch.setenv("POLARS_ISSUE_28304_STAGES", "value|b")
+    if adaptive:
+        plmonkeypatch.setenv("POLARS_ISSUE_28304_ADAPTIVE", "1")
+    actual = query.collect(engine="streaming")
+    assert_frame_equal(actual, expected)
+
+
 @pytest.mark.parametrize("parallel", ["columns", "row_groups"])
 def test_filtering_on_other_parallel_modes_with_statistics(
     parallel: ParallelStrategy,
