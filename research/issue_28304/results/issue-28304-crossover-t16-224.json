@@ -1,0 +1,76 @@
+{
+  "data": {
+    "path": "/private/tmp/issue-28304-crossover-t16-224.parquet",
+    "row_group_size": 1000000,
+    "row_groups": 10,
+    "rows": 10000000,
+    "selectivity": {
+      "all_conjunction": 0.0300694,
+      "quantity": 0.600053,
+      "ship_conjunction": 0.0501072,
+      "shipinstruct": 0.223917,
+      "shipmode": 0.2240424
+    },
+    "shipinstruct_per_mille": 224,
+    "shipmode_per_mille": 224
+  },
+  "environment": {
+    "issue_28304_stages": "l_shipmode,l_shipinstruct|l_quantity",
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "polars_max_threads": "16",
+    "polars_thread_pool_size": 16,
+    "polars_version": "1.43.0",
+    "python": "3.13.11 (main, Jan 19 2026, 13:46:40) [Clang 17.0.0 (clang-1700.6.3.2)]"
+  },
+  "expected_result": 4667846,
+  "measurement": {
+    "iterations": 20,
+    "rotated_query_order": true,
+    "warmups": 3
+  },
+  "plans": {
+    "all_pushed": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-crossover-t16-224.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_candidate": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-crossover-t16-224.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000"
+  },
+  "queries": {
+    "all_pushed": {
+      "cpu_seconds": {
+        "max": 0.052355,
+        "median": 0.0518785,
+        "min": 0.049963,
+        "p25": 0.05155,
+        "p75": 0.05211,
+        "p95": 0.05223
+      },
+      "wall_seconds": {
+        "max": 0.005237667,
+        "median": 0.00489575,
+        "min": 0.004789958,
+        "p25": 0.004833958,
+        "p75": 0.005041084,
+        "p95": 0.005218083
+      }
+    },
+    "staged_candidate": {
+      "cpu_seconds": {
+        "max": 0.047851,
+        "median": 0.0472415,
+        "min": 0.04614,
+        "p25": 0.046755,
+        "p75": 0.047529,
+        "p95": 0.047618
+      },
+      "wall_seconds": {
+        "max": 0.005447917,
+        "median": 0.0048317085,
+        "min": 0.004410667,
+        "p25": 0.004665,
+        "p75": 0.00513925,
+        "p95": 0.005213083
+      }
+    }
+  },
+  "stage_specs": {
+    "staged_candidate": "l_shipmode,l_shipinstruct|l_quantity"
+  }
+}

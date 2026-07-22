@@ -1,0 +1,316 @@
+{
+  "data": {
+    "path": "/private/tmp/issue-28304-staged-oracle-t1.parquet",
+    "row_group_size": 1000000,
+    "row_groups": 10,
+    "rows": 10000000,
+    "selectivity": {
+      "all_conjunction": 0.0212744,
+      "quantity": 0.600053,
+      "ship_conjunction": 0.0354344,
+      "shipinstruct": 0.2499964,
+      "shipmode": 0.1420386
+    },
+    "shipinstruct_per_mille": 250,
+    "shipmode_per_mille": 142
+  },
+  "environment": {
+    "issue_28304_stages": "l_shipmode,l_shipinstruct,l_quantity",
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "polars_max_threads": "1",
+    "polars_thread_pool_size": 1,
+    "polars_version": "1.43.0",
+    "python": "3.13.11 (main, Jan 19 2026, 13:46:40) [Clang 17.0.0 (clang-1700.6.3.2)]"
+  },
+  "expected_result": 3304369,
+  "measurement": {
+    "iterations": 30,
+    "rotated_query_order": true,
+    "warmups": 5
+  },
+  "plans": {
+    "all_pushed": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_00_l_shipmode_l_shipinstruct_l_quantity": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_01_l_shipmode__l_shipinstruct_l_quantity": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_02_l_shipinstruct__l_shipmode_l_quantity": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_03_l_quantity__l_shipmode_l_shipinstruct": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_04_l_shipmode_l_shipinstruct__l_quantity": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_05_l_shipmode_l_quantity__l_shipinstruct": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_06_l_shipinstruct_l_quantity__l_shipmode": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_07_l_shipmode__l_shipinstruct__l_quantity": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_08_l_shipmode__l_quantity__l_shipinstruct": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_09_l_shipinstruct__l_shipmode__l_quantity": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_10_l_shipinstruct__l_quantity__l_shipmode": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_11_l_quantity__l_shipmode__l_shipinstruct": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_12_l_quantity__l_shipinstruct__l_shipmode": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-staged-oracle-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000"
+  },
+  "queries": {
+    "all_pushed": {
+      "cpu_seconds": {
+        "max": 0.073913,
+        "median": 0.0722815,
+        "min": 0.071608,
+        "p25": 0.071949,
+        "p75": 0.072669,
+        "p95": 0.073454
+      },
+      "wall_seconds": {
+        "max": 0.073781166,
+        "median": 0.071856771,
+        "min": 0.071139792,
+        "p25": 0.071496583,
+        "p75": 0.072388,
+        "p95": 0.0731545
+      }
+    },
+    "staged_00_l_shipmode_l_shipinstruct_l_quantity": {
+      "cpu_seconds": {
+        "max": 0.07563,
+        "median": 0.07236799999999999,
+        "min": 0.071863,
+        "p25": 0.072242,
+        "p75": 0.072896,
+        "p95": 0.074576
+      },
+      "wall_seconds": {
+        "max": 0.0770255,
+        "median": 0.07191860450000001,
+        "min": 0.071431917,
+        "p25": 0.071810833,
+        "p75": 0.07242075,
+        "p95": 0.074888875
+      }
+    },
+    "staged_01_l_shipmode__l_shipinstruct_l_quantity": {
+      "cpu_seconds": {
+        "max": 0.110296,
+        "median": 0.10668749999999999,
+        "min": 0.105975,
+        "p25": 0.106322,
+        "p75": 0.107135,
+        "p95": 0.10966
+      },
+      "wall_seconds": {
+        "max": 0.111062834,
+        "median": 0.1062207295,
+        "min": 0.105530417,
+        "p25": 0.105851875,
+        "p75": 0.106731167,
+        "p95": 0.110382333
+      }
+    },
+    "staged_02_l_shipinstruct__l_shipmode_l_quantity": {
+      "cpu_seconds": {
+        "max": 0.123402,
+        "median": 0.120527,
+        "min": 0.119857,
+        "p25": 0.120344,
+        "p75": 0.120892,
+        "p95": 0.121827
+      },
+      "wall_seconds": {
+        "max": 0.123730125,
+        "median": 0.1200738955,
+        "min": 0.119386709,
+        "p25": 0.11985925,
+        "p75": 0.120401583,
+        "p95": 0.122648542
+      }
+    },
+    "staged_03_l_quantity__l_shipmode_l_shipinstruct": {
+      "cpu_seconds": {
+        "max": 0.227692,
+        "median": 0.22159299999999998,
+        "min": 0.220669,
+        "p25": 0.221405,
+        "p75": 0.222205,
+        "p95": 0.224551
+      },
+      "wall_seconds": {
+        "max": 0.234593666,
+        "median": 0.22111075000000002,
+        "min": 0.220193667,
+        "p25": 0.220906834,
+        "p75": 0.221869,
+        "p95": 0.2247905
+      }
+    },
+    "staged_04_l_shipmode_l_shipinstruct__l_quantity": {
+      "cpu_seconds": {
+        "max": 0.068793,
+        "median": 0.066648,
+        "min": 0.066048,
+        "p25": 0.066393,
+        "p75": 0.067074,
+        "p95": 0.068536
+      },
+      "wall_seconds": {
+        "max": 0.068834875,
+        "median": 0.066158125,
+        "min": 0.065614833,
+        "p25": 0.0658975,
+        "p75": 0.066606583,
+        "p95": 0.068221583
+      }
+    },
+    "staged_05_l_shipmode_l_quantity__l_shipinstruct": {
+      "cpu_seconds": {
+        "max": 0.100353,
+        "median": 0.0972045,
+        "min": 0.096639,
+        "p25": 0.096873,
+        "p75": 0.097944,
+        "p95": 0.099913
+      },
+      "wall_seconds": {
+        "max": 0.100411083,
+        "median": 0.096805125,
+        "min": 0.096141917,
+        "p25": 0.096423375,
+        "p75": 0.097496334,
+        "p95": 0.100265625
+      }
+    },
+    "staged_06_l_shipinstruct_l_quantity__l_shipmode": {
+      "cpu_seconds": {
+        "max": 0.096777,
+        "median": 0.092571,
+        "min": 0.091775,
+        "p25": 0.092303,
+        "p75": 0.093565,
+        "p95": 0.095453
+      },
+      "wall_seconds": {
+        "max": 0.097838208,
+        "median": 0.092131146,
+        "min": 0.09131725,
+        "p25": 0.091863667,
+        "p75": 0.093353833,
+        "p95": 0.097833459
+      }
+    },
+    "staged_07_l_shipmode__l_shipinstruct__l_quantity": {
+      "cpu_seconds": {
+        "max": 0.098531,
+        "median": 0.096197,
+        "min": 0.095697,
+        "p25": 0.096032,
+        "p75": 0.096484,
+        "p95": 0.098129
+      },
+      "wall_seconds": {
+        "max": 0.099061458,
+        "median": 0.095694854,
+        "min": 0.09523175,
+        "p25": 0.095571125,
+        "p75": 0.096025959,
+        "p95": 0.097839375
+      }
+    },
+    "staged_08_l_shipmode__l_quantity__l_shipinstruct": {
+      "cpu_seconds": {
+        "max": 0.104104,
+        "median": 0.1010305,
+        "min": 0.100291,
+        "p25": 0.100697,
+        "p75": 0.102094,
+        "p95": 0.103845
+      },
+      "wall_seconds": {
+        "max": 0.10487025,
+        "median": 0.10058125000000001,
+        "min": 0.0998425,
+        "p25": 0.100256791,
+        "p75": 0.102179292,
+        "p95": 0.104363958
+      }
+    },
+    "staged_09_l_shipinstruct__l_shipmode__l_quantity": {
+      "cpu_seconds": {
+        "max": 0.102935,
+        "median": 0.100659,
+        "min": 0.100061,
+        "p25": 0.100315,
+        "p75": 0.101358,
+        "p95": 0.102329
+      },
+      "wall_seconds": {
+        "max": 0.103449458,
+        "median": 0.1001899165,
+        "min": 0.099607042,
+        "p25": 0.099868625,
+        "p75": 0.100922042,
+        "p95": 0.102539583
+      }
+    },
+    "staged_10_l_shipinstruct__l_quantity__l_shipmode": {
+      "cpu_seconds": {
+        "max": 0.106409,
+        "median": 0.1043745,
+        "min": 0.103841,
+        "p25": 0.104113,
+        "p75": 0.104629,
+        "p95": 0.106111
+      },
+      "wall_seconds": {
+        "max": 0.108340209,
+        "median": 0.103884479,
+        "min": 0.10337025,
+        "p25": 0.103654291,
+        "p75": 0.104162791,
+        "p95": 0.106079083
+      }
+    },
+    "staged_11_l_quantity__l_shipmode__l_shipinstruct": {
+      "cpu_seconds": {
+        "max": 0.177035,
+        "median": 0.17319400000000001,
+        "min": 0.171968,
+        "p25": 0.172881,
+        "p75": 0.173769,
+        "p95": 0.175374
+      },
+      "wall_seconds": {
+        "max": 0.177618042,
+        "median": 0.17288341699999998,
+        "min": 0.171528667,
+        "p25": 0.172439834,
+        "p75": 0.1732955,
+        "p95": 0.1753885
+      }
+    },
+    "staged_12_l_quantity__l_shipinstruct__l_shipmode": {
+      "cpu_seconds": {
+        "max": 0.168465,
+        "median": 0.165937,
+        "min": 0.165117,
+        "p25": 0.165624,
+        "p75": 0.166612,
+        "p95": 0.168288
+      },
+      "wall_seconds": {
+        "max": 0.169432416,
+        "median": 0.16545247899999999,
+        "min": 0.164580791,
+        "p25": 0.165189709,
+        "p75": 0.166147,
+        "p95": 0.168782541
+      }
+    }
+  },
+  "stage_specs": {
+    "staged_00_l_shipmode_l_shipinstruct_l_quantity": "l_shipmode,l_shipinstruct,l_quantity",
+    "staged_01_l_shipmode__l_shipinstruct_l_quantity": "l_shipmode|l_shipinstruct,l_quantity",
+    "staged_02_l_shipinstruct__l_shipmode_l_quantity": "l_shipinstruct|l_shipmode,l_quantity",
+    "staged_03_l_quantity__l_shipmode_l_shipinstruct": "l_quantity|l_shipmode,l_shipinstruct",
+    "staged_04_l_shipmode_l_shipinstruct__l_quantity": "l_shipmode,l_shipinstruct|l_quantity",
+    "staged_05_l_shipmode_l_quantity__l_shipinstruct": "l_shipmode,l_quantity|l_shipinstruct",
+    "staged_06_l_shipinstruct_l_quantity__l_shipmode": "l_shipinstruct,l_quantity|l_shipmode",
+    "staged_07_l_shipmode__l_shipinstruct__l_quantity": "l_shipmode|l_shipinstruct|l_quantity",
+    "staged_08_l_shipmode__l_quantity__l_shipinstruct": "l_shipmode|l_quantity|l_shipinstruct",
+    "staged_09_l_shipinstruct__l_shipmode__l_quantity": "l_shipinstruct|l_shipmode|l_quantity",
+    "staged_10_l_shipinstruct__l_quantity__l_shipmode": "l_shipinstruct|l_quantity|l_shipmode",
+    "staged_11_l_quantity__l_shipmode__l_shipinstruct": "l_quantity|l_shipmode|l_shipinstruct",
+    "staged_12_l_quantity__l_shipinstruct__l_shipmode": "l_quantity|l_shipinstruct|l_shipmode"
+  }
+}

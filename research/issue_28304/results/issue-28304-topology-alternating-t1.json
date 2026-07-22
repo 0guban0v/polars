@@ -1,0 +1,78 @@
+{
+  "data": {
+    "correlation": "independent",
+    "mask_topology": "alternating",
+    "path": "/private/tmp/issue-28304-topology-alternating-t1.parquet",
+    "row_group_size": 1000000,
+    "row_groups": 10,
+    "rows": 10000000,
+    "selectivity": {
+      "all_conjunction": 0.0212744,
+      "quantity": 0.600053,
+      "ship_conjunction": 0.0354344,
+      "shipinstruct": 0.2499964,
+      "shipmode": 0.1420386
+    },
+    "shipinstruct_per_mille": 250,
+    "shipmode_per_mille": 142
+  },
+  "environment": {
+    "issue_28304_stages": "l_shipmode,l_shipinstruct|l_quantity",
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "polars_max_threads": "1",
+    "polars_thread_pool_size": 1,
+    "polars_version": "1.43.0",
+    "python": "3.13.11 (main, Jan 19 2026, 13:46:40) [Clang 17.0.0 (clang-1700.6.3.2)]"
+  },
+  "expected_result": 3304369,
+  "measurement": {
+    "iterations": 20,
+    "rotated_query_order": true,
+    "warmups": 3
+  },
+  "plans": {
+    "all_pushed": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-topology-alternating-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_candidate": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue-28304-topology-alternating-t1.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000"
+  },
+  "queries": {
+    "all_pushed": {
+      "cpu_seconds": {
+        "max": 0.04666,
+        "median": 0.046126,
+        "min": 0.04575,
+        "p25": 0.045853,
+        "p75": 0.046237,
+        "p95": 0.046606
+      },
+      "wall_seconds": {
+        "max": 0.046373292,
+        "median": 0.045837917000000006,
+        "min": 0.045465167,
+        "p25": 0.045552583,
+        "p75": 0.045971875,
+        "p95": 0.046311625
+      }
+    },
+    "staged_candidate": {
+      "cpu_seconds": {
+        "max": 0.039293,
+        "median": 0.038905,
+        "min": 0.038323,
+        "p25": 0.038741,
+        "p75": 0.039105,
+        "p95": 0.039141
+      },
+      "wall_seconds": {
+        "max": 0.038994,
+        "median": 0.0386095835,
+        "min": 0.038052292,
+        "p25": 0.038450291,
+        "p75": 0.038800334,
+        "p95": 0.038854583
+      }
+    }
+  },
+  "stage_specs": {
+    "staged_candidate": "l_shipmode,l_shipinstruct|l_quantity"
+  }
+}

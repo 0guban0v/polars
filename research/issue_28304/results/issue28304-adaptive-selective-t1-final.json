@@ -1,0 +1,102 @@
+{
+  "adaptive_queries": [
+    "adaptive_candidate"
+  ],
+  "data": {
+    "correlation": "independent",
+    "mask_topology": "random",
+    "path": "/private/tmp/issue28304-adaptive-selective.parquet",
+    "row_group_size": 100000,
+    "row_groups": 100,
+    "rows": 10000000,
+    "selectivity": {
+      "all_conjunction": 0.0212744,
+      "quantity": 0.600053,
+      "ship_conjunction": 0.0354344,
+      "shipinstruct": 0.2499964,
+      "shipmode": 0.1420386
+    },
+    "shipinstruct_per_mille": 250,
+    "shipmode_per_mille": 142
+  },
+  "environment": {
+    "issue_28304_adaptive": null,
+    "issue_28304_stages": "l_shipmode,l_shipinstruct|l_quantity",
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "polars_max_threads": "1",
+    "polars_thread_pool_size": 1,
+    "polars_version": "1.43.0",
+    "python": "3.13.11 (main, Jan 19 2026, 13:46:40) [Clang 17.0.0 (clang-1700.6.3.2)]"
+  },
+  "expected_result": 3304369,
+  "measurement": {
+    "iterations": 50,
+    "rotated_query_order": true,
+    "warmups": 5
+  },
+  "plans": {
+    "adaptive_candidate": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue28304-adaptive-selective.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "all_pushed": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue28304-adaptive-selective.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000",
+    "staged_candidate": "SELECT [col(\"l_quantity\").sum()]\n  simple \u03c0 1/1 [\"l_quantity\"]\n    Parquet SCAN [/private/tmp/issue28304-adaptive-selective.parquet]\n    PROJECT 3/3 COLUMNS\n    SELECTION: ((col(\"l_quantity\").is_between([1, 30]) & (col(\"l_shipinstruct\") == \"DELIVER IN PERSON\")) & col(\"l_shipmode\").is_in([[\"AIR\", \"AIR REG\"]]))\n    ESTIMATED ROWS: 10000000"
+  },
+  "queries": {
+    "adaptive_candidate": {
+      "cpu_seconds": {
+        "max": 0.076613,
+        "median": 0.073607,
+        "min": 0.071367,
+        "p25": 0.071986,
+        "p75": 0.074438,
+        "p95": 0.075396
+      },
+      "wall_seconds": {
+        "max": 0.075944084,
+        "median": 0.07252968700000001,
+        "min": 0.070242792,
+        "p25": 0.070920125,
+        "p75": 0.07341875,
+        "p95": 0.074253875
+      }
+    },
+    "all_pushed": {
+      "cpu_seconds": {
+        "max": 0.080511,
+        "median": 0.0783175,
+        "min": 0.076016,
+        "p25": 0.077277,
+        "p75": 0.078965,
+        "p95": 0.079812
+      },
+      "wall_seconds": {
+        "max": 0.079729209,
+        "median": 0.0773099165,
+        "min": 0.074987208,
+        "p25": 0.076190084,
+        "p75": 0.077876625,
+        "p95": 0.078825542
+      }
+    },
+    "staged_candidate": {
+      "cpu_seconds": {
+        "max": 0.07629,
+        "median": 0.0729175,
+        "min": 0.070707,
+        "p25": 0.071528,
+        "p75": 0.073763,
+        "p95": 0.074695
+      },
+      "wall_seconds": {
+        "max": 0.0761895,
+        "median": 0.07183925,
+        "min": 0.069652958,
+        "p25": 0.070440959,
+        "p75": 0.072685292,
+        "p95": 0.073885834
+      }
+    }
+  },
+  "stage_specs": {
+    "adaptive_candidate": "l_shipmode,l_shipinstruct|l_quantity",
+    "staged_candidate": "l_shipmode,l_shipinstruct|l_quantity"
+  }
+}
