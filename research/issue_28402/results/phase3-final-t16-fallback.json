@@ -1,0 +1,388 @@
+{
+  "baseline": "global_fallback",
+  "comparisons": {
+    "capability_auto_1000000": {
+      "change_vs_baseline": -0.008089576215527083,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": 0.0008837489999999996,
+        "ci95_low": -0.001980751000000003,
+        "median": -0.00015393699999999982
+      }
+    },
+    "capability_fanout": {
+      "change_vs_baseline": 0.30620916398730924,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": 0.007541334,
+        "ci95_low": 0.0036918329999999985,
+        "median": 0.005951083000000001
+      }
+    },
+    "capability_materialized": {
+      "change_vs_baseline": 0.0467914737585704,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": 0.0027483959999999984,
+        "ci95_low": 0.0004007841750000014,
+        "median": 0.0012223544999999999
+      }
+    },
+    "capability_selected": {
+      "change_vs_baseline": 0.07257424014391667,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": 0.001520177824999991,
+        "ci95_low": -0.00018280467500000026,
+        "median": 0.0008883750000000003
+      }
+    },
+    "slice_blocked": {
+      "change_vs_baseline": 0.29757785355931743,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": 0.006815416500000001,
+        "ci95_low": 0.0046501254999999995,
+        "median": 0.005926332999999999
+      }
+    }
+  },
+  "configuration": {
+    "auto_fanout_min_task_values": 1000000,
+    "auto_max_speculative_values": [
+      1000000
+    ],
+    "auto_min_file_rows": 500000,
+    "bootstrap_resamples": 2000,
+    "fanout_min_task_values": [],
+    "iterations": 10,
+    "payload_dtype": "string",
+    "payload_width": 8,
+    "prefix_retention": 0.9,
+    "relationship": "independent",
+    "residual_dtype": "float",
+    "residual_projection": "projected",
+    "residual_retention": 0.1,
+    "row_group_size": 1000000,
+    "row_groups": 4,
+    "rows": 4000000,
+    "seed": 28403,
+    "warmups": 2
+  },
+  "environment": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "polars_max_threads": "16",
+    "polars_thread_pool_size": 16,
+    "polars_version": "1.43.0",
+    "python": "3.13.11 (main, Jan 19 2026, 13:46:40) [Clang 17.0.0 (clang-1700.6.3.2)]"
+  },
+  "expected_result": [
+    1756589,
+    1756894,
+    1756946,
+    1756355,
+    1756589,
+    1756501,
+    1756424,
+    1756479,
+    1077508.0
+  ],
+  "observed_selectivity": {
+    "final": 0.08981975,
+    "first": 0.9485525,
+    "prefix": 0.89990875,
+    "residual": 0.09996775,
+    "second": 0.94873175
+  },
+  "pairwise_comparisons": {
+    "capability_auto_1000000": {
+      "capability_fanout": {
+        "change_vs_reference": -0.240618997989123,
+        "paired_median_wall_difference_seconds": {
+          "ci95_high": -0.0046259995,
+          "ci95_low": -0.0069265205,
+          "median": -0.005789833500000001
+        }
+      },
+      "capability_materialized": {
+        "change_vs_reference": -0.052427872551391363,
+        "paired_median_wall_difference_seconds": {
+          "ci95_high": 0.000197540999999999,
+          "ci95_low": -0.0027305830000000017,
+          "median": -0.0007888960000000007
+        }
+      }
+    }
+  },
+  "plans": {
+    "capability_auto_1000000": "SELECT [col(\"payload_0\").str.len_bytes().sum(), col(\"payload_1\").str.len_bytes().sum(), col(\"payload_2\").str.len_bytes().sum(), col(\"payload_3\").str.len_bytes().sum(), col(\"payload_4\").str.len_bytes().sum(), col(\"payload_5\").str.len_bytes().sum(), col(\"payload_6\").str.len_bytes().sum(), col(\"payload_7\").str.len_bytes().sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/var/folders/jn/qs2lx3_n2gg99_c1klh1686c0000gn/T/polars-issue-28402-capability-rt21ajh9/mixed-capability.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "capability_fanout": "SELECT [col(\"payload_0\").str.len_bytes().sum(), col(\"payload_1\").str.len_bytes().sum(), col(\"payload_2\").str.len_bytes().sum(), col(\"payload_3\").str.len_bytes().sum(), col(\"payload_4\").str.len_bytes().sum(), col(\"payload_5\").str.len_bytes().sum(), col(\"payload_6\").str.len_bytes().sum(), col(\"payload_7\").str.len_bytes().sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/var/folders/jn/qs2lx3_n2gg99_c1klh1686c0000gn/T/polars-issue-28402-capability-rt21ajh9/mixed-capability.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "capability_materialized": "SELECT [col(\"payload_0\").str.len_bytes().sum(), col(\"payload_1\").str.len_bytes().sum(), col(\"payload_2\").str.len_bytes().sum(), col(\"payload_3\").str.len_bytes().sum(), col(\"payload_4\").str.len_bytes().sum(), col(\"payload_5\").str.len_bytes().sum(), col(\"payload_6\").str.len_bytes().sum(), col(\"payload_7\").str.len_bytes().sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/var/folders/jn/qs2lx3_n2gg99_c1klh1686c0000gn/T/polars-issue-28402-capability-rt21ajh9/mixed-capability.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "capability_selected": "SELECT [col(\"payload_0\").str.len_bytes().sum(), col(\"payload_1\").str.len_bytes().sum(), col(\"payload_2\").str.len_bytes().sum(), col(\"payload_3\").str.len_bytes().sum(), col(\"payload_4\").str.len_bytes().sum(), col(\"payload_5\").str.len_bytes().sum(), col(\"payload_6\").str.len_bytes().sum(), col(\"payload_7\").str.len_bytes().sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/var/folders/jn/qs2lx3_n2gg99_c1klh1686c0000gn/T/polars-issue-28402-capability-rt21ajh9/mixed-capability.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "global_fallback": "SELECT [col(\"payload_0\").str.len_bytes().sum(), col(\"payload_1\").str.len_bytes().sum(), col(\"payload_2\").str.len_bytes().sum(), col(\"payload_3\").str.len_bytes().sum(), col(\"payload_4\").str.len_bytes().sum(), col(\"payload_5\").str.len_bytes().sum(), col(\"payload_6\").str.len_bytes().sum(), col(\"payload_7\").str.len_bytes().sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/var/folders/jn/qs2lx3_n2gg99_c1klh1686c0000gn/T/polars-issue-28402-capability-rt21ajh9/mixed-capability.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "slice_blocked": "SELECT [col(\"payload_0\").str.len_bytes().sum(), col(\"payload_1\").str.len_bytes().sum(), col(\"payload_2\").str.len_bytes().sum(), col(\"payload_3\").str.len_bytes().sum(), col(\"payload_4\").str.len_bytes().sum(), col(\"payload_5\").str.len_bytes().sum(), col(\"payload_6\").str.len_bytes().sum(), col(\"payload_7\").str.len_bytes().sum(), col(\"c_f64\").sum()]\n  FILTER col(\"c_f64\").is_between([1.0, 5.0])\n  FROM\n    simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n      SLICE[offset: 0, len: 4294967295]\n        Parquet SCAN [/var/folders/jn/qs2lx3_n2gg99_c1klh1686c0000gn/T/polars-issue-28402-capability-rt21ajh9/mixed-capability.parquet]\n        PROJECT 11/12 COLUMNS\n        SELECTION: (col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")\n        ESTIMATED ROWS: 4000000"
+  },
+  "queries": {
+    "capability_auto_1000000": {
+      "cpu_seconds": {
+        "max": 0.151451,
+        "median": 0.127115,
+        "min": 0.124427,
+        "p25": 0.126584,
+        "p75": 0.139708,
+        "p95": 0.151451
+      },
+      "wall_seconds": {
+        "max": 0.024341208,
+        "median": 0.020063083,
+        "min": 0.019417084,
+        "p25": 0.019829417,
+        "p75": 0.022001334,
+        "p95": 0.024341208
+      }
+    },
+    "capability_fanout": {
+      "cpu_seconds": {
+        "max": 0.255464,
+        "median": 0.24159799999999998,
+        "min": 0.236506,
+        "p25": 0.239488,
+        "p75": 0.244405,
+        "p95": 0.255464
+      },
+      "wall_seconds": {
+        "max": 0.028362583,
+        "median": 0.026420312,
+        "min": 0.024953166,
+        "p25": 0.025713375,
+        "p75": 0.027597541,
+        "p95": 0.028362583
+      }
+    },
+    "capability_materialized": {
+      "cpu_seconds": {
+        "max": 0.136341,
+        "median": 0.1103475,
+        "min": 0.106307,
+        "p25": 0.108894,
+        "p75": 0.117905,
+        "p95": 0.136341
+      },
+      "wall_seconds": {
+        "max": 0.026020459,
+        "median": 0.021173146,
+        "min": 0.02057925,
+        "p25": 0.021082,
+        "p75": 0.022739959,
+        "p95": 0.026020459
+      }
+    },
+    "capability_selected": {
+      "cpu_seconds": {
+        "max": 0.123162,
+        "median": 0.112273,
+        "min": 0.105337,
+        "p25": 0.106689,
+        "p75": 0.117459,
+        "p95": 0.123162
+      },
+      "wall_seconds": {
+        "max": 0.024077791,
+        "median": 0.0216946465,
+        "min": 0.020414625,
+        "p25": 0.020599833,
+        "p75": 0.022739792,
+        "p95": 0.024077791
+      }
+    },
+    "global_fallback": {
+      "cpu_seconds": {
+        "max": 0.156226,
+        "median": 0.132118,
+        "min": 0.125198,
+        "p25": 0.126795,
+        "p75": 0.138628,
+        "p95": 0.156226
+      },
+      "wall_seconds": {
+        "max": 0.024543958,
+        "median": 0.0202267085,
+        "min": 0.019081375,
+        "p25": 0.019839958,
+        "p75": 0.022021542,
+        "p95": 0.024543958
+      }
+    },
+    "slice_blocked": {
+      "cpu_seconds": {
+        "max": 0.31446,
+        "median": 0.28064100000000003,
+        "min": 0.254999,
+        "p25": 0.268218,
+        "p75": 0.284567,
+        "p95": 0.31446
+      },
+      "wall_seconds": {
+        "max": 0.028735042,
+        "median": 0.026245729,
+        "min": 0.02432025,
+        "p25": 0.025973916,
+        "p75": 0.027135583,
+        "p95": 0.028735042
+      }
+    }
+  },
+  "samples": {
+    "capability_auto_1000000": {
+      "cpu_seconds": [
+        0.126242,
+        0.124427,
+        0.126584,
+        0.151451,
+        0.12742,
+        0.139708,
+        0.12681,
+        0.140244,
+        0.132277,
+        0.126681
+      ],
+      "wall_seconds": [
+        0.020040791,
+        0.019417084,
+        0.020085375,
+        0.024341208,
+        0.019670833,
+        0.022050542,
+        0.019998083,
+        0.022001334,
+        0.020962333,
+        0.019829417
+      ]
+    },
+    "capability_fanout": {
+      "cpu_seconds": [
+        0.239488,
+        0.242588,
+        0.241779,
+        0.255464,
+        0.236506,
+        0.241417,
+        0.23943,
+        0.249238,
+        0.240527,
+        0.244405
+      ],
+      "wall_seconds": [
+        0.025713375,
+        0.027597541,
+        0.028362583,
+        0.027097,
+        0.024953166,
+        0.025636041,
+        0.025905166,
+        0.02799775,
+        0.026628833,
+        0.026211791
+      ]
+    },
+    "capability_materialized": {
+      "cpu_seconds": [
+        0.136341,
+        0.110392,
+        0.106307,
+        0.125055,
+        0.115712,
+        0.109859,
+        0.108894,
+        0.110303,
+        0.107981,
+        0.117905
+      ],
+      "wall_seconds": [
+        0.026020459,
+        0.02108575,
+        0.02057925,
+        0.024143667,
+        0.022739959,
+        0.021101667,
+        0.021082,
+        0.021244625,
+        0.020945625,
+        0.02256
+      ]
+    },
+    "capability_selected": {
+      "cpu_seconds": [
+        0.116636,
+        0.123162,
+        0.106689,
+        0.106844,
+        0.117459,
+        0.105673,
+        0.112607,
+        0.120799,
+        0.105337,
+        0.111939
+      ],
+      "wall_seconds": [
+        0.022739792,
+        0.024077791,
+        0.020599833,
+        0.020614166,
+        0.022578584,
+        0.020414625,
+        0.021724084,
+        0.023169875,
+        0.020461875,
+        0.021665209
+      ]
+    },
+    "global_fallback": {
+      "cpu_seconds": [
+        0.138628,
+        0.128952,
+        0.126795,
+        0.125198,
+        0.14022,
+        0.137617,
+        0.125857,
+        0.156226,
+        0.128849,
+        0.135284
+      ],
+      "wall_seconds": [
+        0.022021542,
+        0.019883083,
+        0.019081375,
+        0.019555666,
+        0.022024708,
+        0.021494375,
+        0.019839958,
+        0.024543958,
+        0.020078584,
+        0.020374833
+      ]
+    },
+    "slice_blocked": {
+      "cpu_seconds": [
+        0.286422,
+        0.284567,
+        0.258314,
+        0.31446,
+        0.268218,
+        0.281719,
+        0.2844,
+        0.276549,
+        0.254999,
+        0.279563
+      ],
+      "wall_seconds": [
+        0.028072458,
+        0.028735042,
+        0.02432025,
+        0.027135583,
+        0.026086084,
+        0.026394333,
+        0.025674083,
+        0.025973916,
+        0.026097125,
+        0.026456917
+      ]
+    }
+  }
+}

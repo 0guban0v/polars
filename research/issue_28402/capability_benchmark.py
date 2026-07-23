@@ -17,12 +17,23 @@ import sys
 import tempfile
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 import polars as pl
+
+
+@dataclass(frozen=True)
+class Specification:
+    query: pl.LazyFrame
+    capability_mode: str | None = None
+    stage_spec: str | None = None
+    fanout_min_task_values: int | None = None
+    auto_max_speculative_values: int | None = None
+    auto_min_file_rows: int | None = None
 
 
 def percentile(values: Sequence[float], probability: float) -> float:
@@ -82,8 +93,9 @@ def generate_data(
     prefix_retention: float,
     relationship: str,
     payload_width: int,
+    payload_dtype: str,
     seed: int,
-) -> dict[str, float]:
+) -> None:
     if not 0 < prefix_retention < 1:
         msg = "--prefix-retention must be between zero and one"
         raise ValueError(msg)
@@ -114,12 +126,22 @@ def generate_data(
         "c_f64": residual.astype(np.float64),
     }
     for index in range(payload_width):
-        columns[f"payload_{index}"] = generator.integers(
+        values = generator.integers(
             0,
             10_000,
             size=rows,
             dtype=np.int64,
         )
+        if payload_dtype == "int":
+            payload = values
+        elif payload_dtype == "float":
+            payload = values.astype(np.float64)
+        elif payload_dtype == "string":
+            payload = np.char.add("v", values.astype(str))
+        else:
+            msg = f"unknown payload dtype: {payload_dtype}"
+            raise ValueError(msg)
+        columns[f"payload_{index}"] = payload
 
     frame = (
         pl.DataFrame(columns)
@@ -137,21 +159,25 @@ def generate_data(
         row_group_size=row_group_size,
         statistics=True,
     )
-    return measure_data(path)
 
 
-def predicates(residual_dtype: str) -> tuple[pl.Expr, pl.Expr, pl.Expr]:
+def predicates(
+    residual_dtype: str,
+    residual_retention: float,
+) -> tuple[pl.Expr, pl.Expr, pl.Expr]:
     residual_column = "c_f64" if residual_dtype == "float" else "c_i64"
+    residual_upper = round(50 * residual_retention)
+    residual_upper = max(1, min(49, residual_upper))
     return (
         pl.col("c1") == "C",
         pl.col("c2") == "W",
-        pl.col(residual_column).is_between(1, 30),
+        pl.col(residual_column).is_between(1, residual_upper),
     )
 
 
-def measure_data(path: Path) -> dict[str, float]:
+def measure_data(path: Path, *, residual_retention: float) -> dict[str, float]:
     frame = pl.scan_parquet(path)
-    first, second, residual = predicates("float")
+    first, second, residual = predicates("float", residual_retention)
     values = frame.select(
         first.mean().alias("first"),
         second.mean().alias("second"),
@@ -166,21 +192,26 @@ def make_query(
     path: Path,
     *,
     residual_dtype: str,
+    residual_retention: float,
     blocked: bool,
     residual_projected: bool,
 ) -> pl.LazyFrame:
-    first, second, residual = predicates(residual_dtype)
+    first, second, residual = predicates(residual_dtype, residual_retention)
     residual_column = "c_f64" if residual_dtype == "float" else "c_i64"
     query = pl.scan_parquet(path, parallel="prefiltered").filter(first).filter(second)
     if blocked:
         query = query.slice(0, None)
     query = query.filter(residual)
 
-    aggregations = [
-        pl.col(name).sum().alias(name)
-        for name in query.collect_schema().names()
-        if name.startswith("payload_")
-    ]
+    schema = query.collect_schema()
+    aggregations = []
+    for name, dtype in schema.items():
+        if not name.startswith("payload_"):
+            continue
+        expression = pl.col(name)
+        if dtype == pl.String:
+            expression = expression.str.len_bytes()
+        aggregations.append(expression.sum().alias(name))
     if residual_projected:
         aggregations.append(pl.col(residual_column).sum().alias(residual_column))
     return query.select(aggregations)
@@ -191,6 +222,8 @@ def configure_environment(
     capability_mode: str | None,
     stage_spec: str | None,
     fanout_min_task_values: int | None = None,
+    auto_max_speculative_values: int | None = None,
+    auto_min_file_rows: int | None = None,
 ) -> None:
     if capability_mode is not None:
         os.environ["POLARS_ISSUE_28402_CAPABILITY_STAGING"] = capability_mode
@@ -206,6 +239,16 @@ def configure_environment(
         os.environ["POLARS_ISSUE_28402_FANOUT_MIN_TASK_VALUES"] = str(
             fanout_min_task_values
         )
+    if auto_max_speculative_values is None:
+        os.environ.pop("POLARS_ISSUE_28402_AUTO_MAX_SPECULATIVE_VALUES", None)
+    else:
+        os.environ["POLARS_ISSUE_28402_AUTO_MAX_SPECULATIVE_VALUES"] = str(
+            auto_max_speculative_values
+        )
+    if auto_min_file_rows is None:
+        os.environ.pop("POLARS_ISSUE_28402_AUTO_MIN_FILE_ROWS", None)
+    else:
+        os.environ["POLARS_ISSUE_28402_AUTO_MIN_FILE_ROWS"] = str(auto_min_file_rows)
     os.environ.pop("POLARS_ISSUE_28304_ADAPTIVE", None)
     os.environ.pop("POLARS_ISSUE_28304_ROLLING_POLICY", None)
 
@@ -216,11 +259,15 @@ def execute(
     capability_mode: str | None = None,
     stage_spec: str | None = None,
     fanout_min_task_values: int | None = None,
+    auto_max_speculative_values: int | None = None,
+    auto_min_file_rows: int | None = None,
 ) -> tuple[tuple[Any, ...], float, float]:
     configure_environment(
         capability_mode=capability_mode,
         stage_spec=stage_spec,
         fanout_min_task_values=fanout_min_task_values,
+        auto_max_speculative_values=auto_max_speculative_values,
+        auto_min_file_rows=auto_min_file_rows,
     )
     wall_start = time.perf_counter_ns()
     cpu_start = time.process_time_ns()
@@ -234,73 +281,98 @@ def run(
     path: Path,
     *,
     residual_dtype: str,
+    residual_retention: float,
     residual_projected: bool,
     warmups: int,
     iterations: int,
     seed: int,
     bootstrap_resamples: int,
     fanout_min_task_values: Sequence[int],
+    auto_max_speculative_values: Sequence[int],
+    auto_fanout_min_task_values: int | None,
+    auto_min_file_rows: int,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     blocked_query = make_query(
         path,
         residual_dtype=residual_dtype,
+        residual_retention=residual_retention,
         blocked=True,
         residual_projected=residual_projected,
     )
     pushed_query = make_query(
         path,
         residual_dtype=residual_dtype,
+        residual_retention=residual_retention,
         blocked=False,
         residual_projected=residual_projected,
     )
     if residual_dtype == "float":
         specifications = {
-            "global_fallback": (pushed_query, None, None, None),
-            "capability_selected": (pushed_query, "selected", None, None),
-            "capability_materialized": (pushed_query, "materialized", None, None),
-            "capability_fanout": (pushed_query, "fanout", None, None),
+            "global_fallback": Specification(pushed_query),
+            "capability_selected": Specification(
+                pushed_query,
+                capability_mode="selected",
+            ),
+            "capability_materialized": Specification(
+                pushed_query,
+                capability_mode="materialized",
+            ),
+            "capability_fanout": Specification(
+                pushed_query,
+                capability_mode="fanout",
+            ),
             **{
-                f"capability_fanout_local_{task_values}": (
+                f"capability_fanout_local_{task_values}": Specification(
                     pushed_query,
-                    "fanout",
-                    None,
-                    task_values,
+                    capability_mode="fanout",
+                    fanout_min_task_values=task_values,
                 )
                 for task_values in fanout_min_task_values
             },
-            "slice_blocked": (blocked_query, None, None, None),
+            **{
+                f"capability_auto_{max_values}": Specification(
+                    pushed_query,
+                    capability_mode="auto",
+                    fanout_min_task_values=auto_fanout_min_task_values,
+                    auto_max_speculative_values=max_values,
+                    auto_min_file_rows=auto_min_file_rows,
+                )
+                for max_values in auto_max_speculative_values
+            },
+            "slice_blocked": Specification(blocked_query),
         }
         baseline_name = "global_fallback"
     else:
         specifications = {
-            "all_at_once": (pushed_query, None, None, None),
-            "forced_staged": (pushed_query, None, "c1,c2|c_i64", None),
-            "slice_blocked": (blocked_query, None, None, None),
+            "all_at_once": Specification(pushed_query),
+            "forced_staged": Specification(
+                pushed_query,
+                stage_spec="c1,c2|c_i64",
+            ),
+            "slice_blocked": Specification(blocked_query),
         }
         baseline_name = "all_at_once"
 
     plans = {}
-    for (
-        name,
-        (query, capability_mode, stage_spec, task_values),
-    ) in specifications.items():
+    for name, specification in specifications.items():
         configure_environment(
-            capability_mode=capability_mode,
-            stage_spec=stage_spec,
-            fanout_min_task_values=task_values,
+            capability_mode=specification.capability_mode,
+            stage_spec=specification.stage_spec,
+            fanout_min_task_values=specification.fanout_min_task_values,
+            auto_max_speculative_values=specification.auto_max_speculative_values,
+            auto_min_file_rows=specification.auto_min_file_rows,
         )
-        plans[name] = query.explain(optimized=True, engine="streaming")
+        plans[name] = specification.query.explain(optimized=True, engine="streaming")
 
     expected: tuple[Any, ...] | None = None
-    for (
-        name,
-        (query, capability_mode, stage_spec, task_values),
-    ) in specifications.items():
+    for name, specification in specifications.items():
         result, _, _ = execute(
-            query,
-            capability_mode=capability_mode,
-            stage_spec=stage_spec,
-            fanout_min_task_values=task_values,
+            specification.query,
+            capability_mode=specification.capability_mode,
+            stage_spec=specification.stage_spec,
+            fanout_min_task_values=specification.fanout_min_task_values,
+            auto_max_speculative_values=specification.auto_max_speculative_values,
+            auto_min_file_rows=specification.auto_min_file_rows,
         )
         if expected is None:
             expected = result
@@ -309,12 +381,14 @@ def run(
             raise AssertionError(msg)
 
     for _ in range(warmups):
-        for query, capability_mode, stage_spec, task_values in specifications.values():
+        for specification in specifications.values():
             execute(
-                query,
-                capability_mode=capability_mode,
-                stage_spec=stage_spec,
-                fanout_min_task_values=task_values,
+                specification.query,
+                capability_mode=specification.capability_mode,
+                stage_spec=specification.stage_spec,
+                fanout_min_task_values=specification.fanout_min_task_values,
+                auto_max_speculative_values=specification.auto_max_speculative_values,
+                auto_min_file_rows=specification.auto_min_file_rows,
             )
 
     samples: dict[str, dict[str, list[float]]] = {
@@ -326,12 +400,14 @@ def run(
         generator.shuffle(names)
         for name in names:
             gc.collect()
-            query, capability_mode, stage_spec, task_values = specifications[name]
+            specification = specifications[name]
             _, wall_seconds, cpu_seconds = execute(
-                query,
-                capability_mode=capability_mode,
-                stage_spec=stage_spec,
-                fanout_min_task_values=task_values,
+                specification.query,
+                capability_mode=specification.capability_mode,
+                stage_spec=specification.stage_spec,
+                fanout_min_task_values=specification.fanout_min_task_values,
+                auto_max_speculative_values=specification.auto_max_speculative_values,
+                auto_min_file_rows=specification.auto_min_file_rows,
             )
             samples[name]["wall_seconds"].append(wall_seconds)
             samples[name]["cpu_seconds"].append(cpu_seconds)
@@ -358,10 +434,14 @@ def run(
     pairwise_comparisons = {}
     if residual_dtype == "float":
         for name in specifications:
-            if not name.startswith("capability_fanout_local_"):
+            if name.startswith("capability_fanout_local_"):
+                reference_names = ("capability_fanout", "slice_blocked")
+            elif name.startswith("capability_auto_"):
+                reference_names = ("capability_fanout", "capability_materialized")
+            else:
                 continue
             pairwise_comparisons[name] = {}
-            for reference_name in ("capability_fanout", "slice_blocked"):
+            for reference_name in reference_names:
                 candidate_wall = query_summaries[name]["wall_seconds"]["median"]
                 reference_wall = query_summaries[reference_name]["wall_seconds"][
                     "median"
@@ -396,6 +476,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rows", type=int, default=2_000_000)
     parser.add_argument("--row-group-size", type=int, default=250_000)
     parser.add_argument("--prefix-retention", type=float, default=0.05)
+    parser.add_argument("--residual-retention", type=float, default=0.6)
     parser.add_argument(
         "--relationship",
         choices=["independent", "nested", "negative"],
@@ -403,6 +484,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--residual-dtype", choices=["float", "int"], default="float")
     parser.add_argument("--payload-width", type=int, default=1)
+    parser.add_argument(
+        "--payload-dtype",
+        choices=["int", "float", "string"],
+        default="int",
+    )
     parser.add_argument(
         "--residual-projection",
         choices=["projected", "filter_only"],
@@ -416,6 +502,22 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="comma-separated fanout-local task sizes to compare in same run",
     )
+    parser.add_argument(
+        "--auto-max-speculative-values",
+        default="",
+        help="comma-separated one-thread auto-schedule thresholds",
+    )
+    parser.add_argument(
+        "--auto-fanout-min-task-values",
+        type=int,
+        help="fanout-local task size used by auto fanout arm",
+    )
+    parser.add_argument(
+        "--auto-min-file-rows",
+        type=int,
+        default=500_000,
+        help="minimum file rows eligible for one-thread auto mode",
+    )
     parser.add_argument("--seed", type=int, default=28402)
     parser.add_argument("--data-path", type=Path)
     parser.add_argument("--reuse-data", action="store_true")
@@ -428,6 +530,9 @@ def main() -> None:
     args = parse_args()
     if args.rows < 1 or args.row_group_size < 1 or args.payload_width < 1:
         msg = "row counts, row-group size, and payload width must be positive"
+        raise ValueError(msg)
+    if not 0 < args.residual_retention < 1:
+        msg = "--residual-retention must be between zero and one"
         raise ValueError(msg)
     if args.iterations < 1 or args.bootstrap_resamples < 1:
         msg = "iterations and bootstrap resamples must be positive"
@@ -443,6 +548,26 @@ def main() -> None:
     if len(fanout_min_task_values) != len(set(fanout_min_task_values)):
         msg = "--fanout-min-task-values must not contain duplicates"
         raise ValueError(msg)
+    auto_max_speculative_values = [
+        int(value.strip())
+        for value in args.auto_max_speculative_values.split(",")
+        if value.strip()
+    ]
+    if any(value < 1 for value in auto_max_speculative_values):
+        msg = "--auto-max-speculative-values must contain positive integers"
+        raise ValueError(msg)
+    if len(auto_max_speculative_values) != len(set(auto_max_speculative_values)):
+        msg = "--auto-max-speculative-values must not contain duplicates"
+        raise ValueError(msg)
+    if (
+        args.auto_fanout_min_task_values is not None
+        and args.auto_fanout_min_task_values < 1
+    ):
+        msg = "--auto-fanout-min-task-values must be positive"
+        raise ValueError(msg)
+    if args.auto_min_file_rows < 1:
+        msg = "--auto-min-file-rows must be positive"
+        raise ValueError(msg)
 
     temporary_directory: tempfile.TemporaryDirectory[str] | None = None
     if args.data_path is None:
@@ -457,27 +582,39 @@ def main() -> None:
         data_path = args.data_path
 
     if args.reuse_data:
-        rates = measure_data(data_path)
+        rates = measure_data(
+            data_path,
+            residual_retention=args.residual_retention,
+        )
     else:
-        rates = generate_data(
+        generate_data(
             data_path,
             rows=args.rows,
             row_group_size=args.row_group_size,
             prefix_retention=args.prefix_retention,
             relationship=args.relationship,
             payload_width=args.payload_width,
+            payload_dtype=args.payload_dtype,
             seed=args.seed,
+        )
+        rates = measure_data(
+            data_path,
+            residual_retention=args.residual_retention,
         )
 
     result, plans = run(
         data_path,
         residual_dtype=args.residual_dtype,
+        residual_retention=args.residual_retention,
         residual_projected=args.residual_projection == "projected",
         warmups=args.warmups,
         iterations=args.iterations,
         seed=args.seed,
         bootstrap_resamples=args.bootstrap_resamples,
         fanout_min_task_values=fanout_min_task_values,
+        auto_max_speculative_values=auto_max_speculative_values,
+        auto_fanout_min_task_values=args.auto_fanout_min_task_values,
+        auto_min_file_rows=args.auto_min_file_rows,
     )
     report = {
         "environment": {
@@ -492,14 +629,19 @@ def main() -> None:
             "row_group_size": args.row_group_size,
             "row_groups": (args.rows + args.row_group_size - 1) // args.row_group_size,
             "prefix_retention": args.prefix_retention,
+            "residual_retention": args.residual_retention,
             "relationship": args.relationship,
             "residual_dtype": args.residual_dtype,
             "payload_width": args.payload_width,
+            "payload_dtype": args.payload_dtype,
             "residual_projection": args.residual_projection,
             "warmups": args.warmups,
             "iterations": args.iterations,
             "bootstrap_resamples": args.bootstrap_resamples,
             "fanout_min_task_values": fanout_min_task_values,
+            "auto_max_speculative_values": auto_max_speculative_values,
+            "auto_fanout_min_task_values": args.auto_fanout_min_task_values,
+            "auto_min_file_rows": args.auto_min_file_rows,
             "seed": args.seed,
         },
         "observed_selectivity": rates,
@@ -517,6 +659,8 @@ def main() -> None:
         capability_mode=None,
         stage_spec=None,
         fanout_min_task_values=None,
+        auto_max_speculative_values=None,
+        auto_min_file_rows=None,
     )
     if temporary_directory is not None:
         temporary_directory.cleanup()

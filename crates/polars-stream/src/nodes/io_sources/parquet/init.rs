@@ -11,7 +11,7 @@ use polars_utils::IdxSize;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::{
-    Issue28402CapabilityMode, Issue28402CapabilityPlan, RowGroupDecoder,
+    Issue28402CapabilityMode, Issue28402CapabilityPlan, RowGroupDecoder, issue_28402_auto_eligible,
 };
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
@@ -387,11 +387,60 @@ impl ParquetReadImpl {
             Ok("1" | "selected") => Some(Issue28402CapabilityMode::Selected),
             Ok("materialized") => Some(Issue28402CapabilityMode::Materialized),
             Ok("fanout") => Some(Issue28402CapabilityMode::Fanout),
+            Ok("auto") => Some(Issue28402CapabilityMode::Auto),
             Ok(value) => panic!(
-                "unknown POLARS_ISSUE_28402_CAPABILITY_STAGING={value:?}; expected selected, materialized, or fanout"
+                "unknown POLARS_ISSUE_28402_CAPABILITY_STAGING={value:?}; expected selected, materialized, fanout, or auto"
             ),
             Err(_) => None,
         };
+        let issue_28402_auto_max_speculative_values = matches!(
+            issue_28402_capability_mode,
+            Some(Issue28402CapabilityMode::Auto)
+        )
+        .then(|| {
+            let value = std::env::var("POLARS_ISSUE_28402_AUTO_MAX_SPECULATIVE_VALUES")
+                .expect("POLARS_ISSUE_28402_AUTO_MAX_SPECULATIVE_VALUES is required in auto mode")
+                .parse::<usize>()
+                .expect(
+                    "POLARS_ISSUE_28402_AUTO_MAX_SPECULATIVE_VALUES must be a positive integer",
+                );
+            assert!(
+                value > 0,
+                "POLARS_ISSUE_28402_AUTO_MAX_SPECULATIVE_VALUES must be positive"
+            );
+            value
+        });
+        let issue_28402_auto_min_file_rows = matches!(
+            issue_28402_capability_mode,
+            Some(Issue28402CapabilityMode::Auto)
+        )
+        .then(|| {
+            let value = std::env::var("POLARS_ISSUE_28402_AUTO_MIN_FILE_ROWS")
+                .expect("POLARS_ISSUE_28402_AUTO_MIN_FILE_ROWS is required in auto mode")
+                .parse::<usize>()
+                .expect("POLARS_ISSUE_28402_AUTO_MIN_FILE_ROWS must be a positive integer");
+            assert!(
+                value > 0,
+                "POLARS_ISSUE_28402_AUTO_MIN_FILE_ROWS must be positive"
+            );
+            value
+        });
+        let issue_28402_auto_eligible = issue_28402_auto_min_file_rows.is_some_and(|min_rows| {
+            issue_28402_auto_eligible(self.metadata.num_rows, min_rows, self.config.num_pipelines)
+        });
+        if matches!(
+            issue_28402_capability_mode,
+            Some(Issue28402CapabilityMode::Auto)
+        ) && std::env::var("POLARS_ISSUE_28402_DECODE_TRACE").as_deref() == Ok("1")
+        {
+            eprintln!(
+                "POLARS_ISSUE_28402_ELIGIBILITY file_rows={} min_file_rows={} pipelines={} eligible={}",
+                self.metadata.num_rows,
+                issue_28402_auto_min_file_rows.unwrap(),
+                self.config.num_pipelines,
+                issue_28402_auto_eligible,
+            );
+        }
         let fanout_max_tasks_per_row_group =
             if self.config.row_group_prefetch_size >= self.config.num_pipelines {
                 1
@@ -402,7 +451,12 @@ impl ParquetReadImpl {
                     .div_ceil(self.config.row_group_prefetch_size)
             };
         let issue_28402_capability_plan = issue_28402_capability_mode
-            .filter(|_| column_predicate_shape_supported && !has_fixed_size_binary_predicate)
+            .filter(|mode| {
+                column_predicate_shape_supported
+                    && !has_fixed_size_binary_predicate
+                    && (!matches!(mode, Issue28402CapabilityMode::Auto)
+                        || issue_28402_auto_eligible)
+            })
             .and_then(|mode| {
                 let predicate = predicate.as_ref()?;
                 let column_predicates = predicate.column_predicates.as_ref();
@@ -441,7 +495,7 @@ impl ParquetReadImpl {
                         mode,
                         fanout_min_task_values: matches!(
                             mode,
-                            Issue28402CapabilityMode::Fanout
+                            Issue28402CapabilityMode::Fanout | Issue28402CapabilityMode::Auto
                         )
                         .then(|| {
                             std::env::var(
@@ -464,6 +518,8 @@ impl ParquetReadImpl {
                             );
                             value
                         }),
+                        auto_max_speculative_values:
+                            issue_28402_auto_max_speculative_values,
                         fanout_max_tasks_per_row_group,
                     },
                 )

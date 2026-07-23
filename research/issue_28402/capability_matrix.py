@@ -39,15 +39,20 @@ def run_benchmark(
     rows: int,
     row_group_size: int,
     retention: float,
+    residual_retention: float,
     relationship: str,
     residual_dtype: str,
     payload_width: int,
+    payload_dtype: str,
     residual_projection: str,
     threads: int,
     warmups: int,
     iterations: int,
     bootstrap_resamples: int,
     fanout_min_task_values: str,
+    auto_max_speculative_values: str,
+    auto_fanout_min_task_values: int | None,
+    auto_min_file_rows: int,
     seed: int,
     reuse_data: bool,
 ) -> None:
@@ -60,12 +65,16 @@ def run_benchmark(
         str(row_group_size),
         "--prefix-retention",
         str(retention),
+        "--residual-retention",
+        str(residual_retention),
         "--relationship",
         relationship,
         "--residual-dtype",
         residual_dtype,
         "--payload-width",
         str(payload_width),
+        "--payload-dtype",
+        payload_dtype,
         "--residual-projection",
         residual_projection,
         "--warmups",
@@ -76,6 +85,10 @@ def run_benchmark(
         str(bootstrap_resamples),
         "--fanout-min-task-values",
         fanout_min_task_values,
+        "--auto-max-speculative-values",
+        auto_max_speculative_values,
+        "--auto-min-file-rows",
+        str(auto_min_file_rows),
         "--seed",
         str(seed),
         "--data-path",
@@ -84,6 +97,13 @@ def run_benchmark(
         str(output),
         "--quiet",
     ]
+    if auto_fanout_min_task_values is not None:
+        command.extend(
+            [
+                "--auto-fanout-min-task-values",
+                str(auto_fanout_min_task_values),
+            ]
+        )
     if reuse_data:
         command.append("--reuse-data")
     environment = os.environ.copy()
@@ -130,10 +150,12 @@ def curate(summary: dict[str, Any]) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--retentions", default="0.01,0.05,0.25,0.6,0.9")
+    parser.add_argument("--residual-retentions", default="0.6")
     parser.add_argument("--relationships", default="independent,nested,negative")
     parser.add_argument("--residual-dtypes", default="float,int")
     parser.add_argument("--threads", default="1,8,16")
     parser.add_argument("--payload-widths", default="1")
+    parser.add_argument("--payload-dtypes", default="int")
     parser.add_argument("--residual-projections", default="projected,filter_only")
     parser.add_argument("--rows", type=int, default=2_000_000)
     parser.add_argument("--row-group-size", type=int, default=250_000)
@@ -145,6 +167,22 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="comma-separated fanout-local task sizes compared within each run",
     )
+    parser.add_argument(
+        "--auto-max-speculative-values",
+        default="",
+        help="comma-separated one-thread auto-schedule thresholds",
+    )
+    parser.add_argument(
+        "--auto-fanout-min-task-values",
+        type=int,
+        help="fanout-local task size used by auto fanout arm",
+    )
+    parser.add_argument(
+        "--auto-min-file-rows",
+        type=int,
+        default=500_000,
+        help="minimum file rows eligible for one-thread auto mode",
+    )
     parser.add_argument("--seed", type=int, default=28402)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--summary", type=Path)
@@ -155,14 +193,21 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     retentions = parse_float_csv(args.retentions)
+    residual_retentions = parse_float_csv(args.residual_retentions)
     relationships = parse_csv(args.relationships)
     residual_dtypes = parse_csv(args.residual_dtypes)
     threads = parse_int_csv(args.threads)
     payload_widths = parse_int_csv(args.payload_widths)
+    payload_dtypes = parse_csv(args.payload_dtypes)
     residual_projections = parse_csv(args.residual_projections)
     fanout_min_task_values = (
         parse_int_csv(args.fanout_min_task_values)
         if args.fanout_min_task_values
+        else []
+    )
+    auto_max_speculative_values = (
+        parse_int_csv(args.auto_max_speculative_values)
+        if args.auto_max_speculative_values
         else []
     )
     if set(relationships) - {"independent", "nested", "negative"}:
@@ -174,6 +219,18 @@ def main() -> None:
     if set(residual_projections) - {"projected", "filter_only"}:
         msg = "unknown residual projection"
         raise ValueError(msg)
+    if set(payload_dtypes) - {"int", "float", "string"}:
+        msg = "unknown payload dtype"
+        raise ValueError(msg)
+    if (
+        args.auto_fanout_min_task_values is not None
+        and args.auto_fanout_min_task_values < 1
+    ):
+        msg = "--auto-fanout-min-task-values must be positive"
+        raise ValueError(msg)
+    if args.auto_min_file_rows < 1:
+        msg = "--auto-min-file-rows must be positive"
+        raise ValueError(msg)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     script = Path(__file__).with_name("capability_benchmark.py")
@@ -182,46 +239,66 @@ def main() -> None:
         retention_label = str(retention).replace(".", "p")
         for relationship in relationships:
             for payload_width in payload_widths:
-                data_stem = f"r{retention_label}-{relationship}-w{payload_width}"
-                data_path = args.output_dir / f"{data_stem}.parquet"
-                reuse_data = False
-                for residual_dtype in residual_dtypes:
-                    for residual_projection in residual_projections:
-                        for thread_count in threads:
-                            result_path = args.output_dir / (
-                                f"{data_stem}-{residual_dtype}-"
-                                f"{residual_projection}-t{thread_count}.json"
-                            )
-                            run_benchmark(
-                                script=script,
-                                output=result_path,
-                                data_path=data_path,
-                                rows=args.rows,
-                                row_group_size=args.row_group_size,
-                                retention=retention,
-                                relationship=relationship,
-                                residual_dtype=residual_dtype,
-                                payload_width=payload_width,
-                                residual_projection=residual_projection,
-                                threads=thread_count,
-                                warmups=args.warmups,
-                                iterations=args.iterations,
-                                bootstrap_resamples=args.bootstrap_resamples,
-                                fanout_min_task_values=args.fanout_min_task_values,
-                                seed=args.seed,
-                                reuse_data=reuse_data,
-                            )
-                            reuse_data = True
-                            report = json.loads(result_path.read_text())
-                            summaries.append(summarize(report, result_path))
+                for payload_dtype in payload_dtypes:
+                    data_stem = (
+                        f"r{retention_label}-{relationship}-"
+                        f"w{payload_width}-{payload_dtype}"
+                    )
+                    data_path = args.output_dir / f"{data_stem}.parquet"
+                    reuse_data = False
+                    for residual_retention in residual_retentions:
+                        residual_label = str(residual_retention).replace(".", "p")
+                        for residual_dtype in residual_dtypes:
+                            for residual_projection in residual_projections:
+                                for thread_count in threads:
+                                    result_path = args.output_dir / (
+                                        f"{data_stem}-rr{residual_label}-"
+                                        f"{residual_dtype}-{residual_projection}-"
+                                        f"t{thread_count}.json"
+                                    )
+                                    run_benchmark(
+                                        script=script,
+                                        output=result_path,
+                                        data_path=data_path,
+                                        rows=args.rows,
+                                        row_group_size=args.row_group_size,
+                                        retention=retention,
+                                        residual_retention=residual_retention,
+                                        relationship=relationship,
+                                        residual_dtype=residual_dtype,
+                                        payload_width=payload_width,
+                                        payload_dtype=payload_dtype,
+                                        residual_projection=residual_projection,
+                                        threads=thread_count,
+                                        warmups=args.warmups,
+                                        iterations=args.iterations,
+                                        bootstrap_resamples=args.bootstrap_resamples,
+                                        fanout_min_task_values=(
+                                            args.fanout_min_task_values
+                                        ),
+                                        auto_max_speculative_values=(
+                                            args.auto_max_speculative_values
+                                        ),
+                                        auto_fanout_min_task_values=(
+                                            args.auto_fanout_min_task_values
+                                        ),
+                                        auto_min_file_rows=args.auto_min_file_rows,
+                                        seed=args.seed,
+                                        reuse_data=reuse_data,
+                                    )
+                                    reuse_data = True
+                                    report = json.loads(result_path.read_text())
+                                    summaries.append(summarize(report, result_path))
 
     summary = {
         "configuration": {
             "retentions": retentions,
+            "residual_retentions": residual_retentions,
             "relationships": relationships,
             "residual_dtypes": residual_dtypes,
             "threads": threads,
             "payload_widths": payload_widths,
+            "payload_dtypes": payload_dtypes,
             "residual_projections": residual_projections,
             "rows": args.rows,
             "row_group_size": args.row_group_size,
@@ -229,6 +306,9 @@ def main() -> None:
             "iterations": args.iterations,
             "bootstrap_resamples": args.bootstrap_resamples,
             "fanout_min_task_values": fanout_min_task_values,
+            "auto_max_speculative_values": auto_max_speculative_values,
+            "auto_fanout_min_task_values": args.auto_fanout_min_task_values,
+            "auto_min_file_rows": args.auto_min_file_rows,
             "seed": args.seed,
         },
         "runs": summaries,

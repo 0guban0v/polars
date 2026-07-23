@@ -3347,6 +3347,62 @@ def test_mixed_predicate_capability_staging_28402(
             "max_tasks=" in event and "min_task_values=1" in event
             for event in filter_events
         )
+    assert not any(
+        line.startswith("POLARS_ISSUE_28402_SCHEDULE ")
+        for line in trace.splitlines()
+    )
+
+
+def test_mixed_predicate_auto_rejects_ineligible_scan_28402(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    rows = 10_000
+    path = tmp_path / "mixed-predicate-auto-ineligible.parquet"
+    pl.DataFrame(
+        {
+            "prefix_1": [f"s{i % 7}" for i in range(rows)],
+            "prefix_2": [f"v{i % 5}" for i in range(rows)],
+            "residual": [(i % 101) / 10 for i in range(rows)],
+            "payload": range(rows),
+        }
+    ).write_parquet(path, row_group_size=1_000)
+    query = (
+        pl.scan_parquet(path, parallel="prefiltered")
+        .filter(
+            pl.col("prefix_1").is_in(["s2", "s5"])
+            & (pl.col("prefix_2") == "v1")
+            & pl.col("residual").is_between(2.0, 8.0)
+        )
+        .select("prefix_1", "residual", "payload")
+    )
+    expected = query.collect(engine="streaming")
+    capfd.readouterr()
+
+    plmonkeypatch.setenv("POLARS_ISSUE_28402_CAPABILITY_STAGING", "auto")
+    plmonkeypatch.setenv(
+        "POLARS_ISSUE_28402_AUTO_MAX_SPECULATIVE_VALUES", "1000000"
+    )
+    plmonkeypatch.setenv("POLARS_ISSUE_28402_AUTO_MIN_FILE_ROWS", "500000")
+    plmonkeypatch.setenv("POLARS_ISSUE_28402_DECODE_TRACE", "1")
+    actual = query.collect(engine="streaming")
+    trace = capfd.readouterr().err
+
+    assert_frame_equal(actual, expected)
+    eligibility_events = [
+        line
+        for line in trace.splitlines()
+        if line.startswith("POLARS_ISSUE_28402_ELIGIBILITY ")
+    ]
+    assert eligibility_events
+    assert all(
+        "file_rows=10000" in event
+        and "min_file_rows=500000" in event
+        and "eligible=false" in event
+        for event in eligibility_events
+    )
+    assert "POLARS_ISSUE_28402_SCHEDULE " not in trace
 
 
 @pytest.mark.parametrize("capability_mode", ["materialized", "fanout"])

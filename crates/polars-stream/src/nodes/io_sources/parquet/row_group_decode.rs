@@ -429,6 +429,7 @@ pub(super) enum Issue28402CapabilityMode {
     Selected,
     Materialized,
     Fanout,
+    Auto,
 }
 
 pub(super) struct Issue28402CapabilityPlan {
@@ -436,6 +437,7 @@ pub(super) struct Issue28402CapabilityPlan {
     pub(super) residual: Vec<usize>,
     pub(super) mode: Issue28402CapabilityMode,
     pub(super) fanout_min_task_values: Option<usize>,
+    pub(super) auto_max_speculative_values: Option<usize>,
     pub(super) fanout_max_tasks_per_row_group: usize,
 }
 
@@ -767,6 +769,18 @@ fn calc_cols_per_thread_work_sized(
         .min(n_cols)
         .max(1);
     n_cols.div_ceil(num_tasks)
+}
+
+pub(super) fn issue_28402_auto_eligible(
+    file_rows: usize,
+    min_file_rows: usize,
+    num_pipelines: usize,
+) -> bool {
+    file_rows >= min_file_rows && num_pipelines == 1
+}
+
+fn issue_28402_should_fanout(speculative_values: usize, max_speculative_values: usize) -> bool {
+    speculative_values <= max_speculative_values
 }
 
 async fn filter_cols_with_granularity(
@@ -1187,8 +1201,9 @@ impl RowGroupDecoder {
         row_group_data: RowGroupData,
         supported: Vec<usize>,
         residual: Vec<usize>,
-        fanout_payload: bool,
+        mode: Issue28402CapabilityMode,
         fanout_min_task_values: Option<usize>,
+        auto_max_speculative_values: Option<usize>,
         fanout_max_tasks_per_row_group: usize,
     ) -> PolarsResult<DataFrame> {
         debug_assert!(row_group_data.slice.is_none());
@@ -1266,6 +1281,33 @@ impl RowGroupDecoder {
         let prefix_mask = prefix_mask.freeze();
         let prefix_ca = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, prefix_mask.clone());
         let prefix_rows = prefix_mask.set_bits();
+        let payload_columns = self.non_predicate_field_indices.len();
+        let speculative_values = prefix_rows.saturating_mul(payload_columns);
+        let fanout_payload = match mode {
+            Issue28402CapabilityMode::Selected => unreachable!(),
+            Issue28402CapabilityMode::Materialized => false,
+            Issue28402CapabilityMode::Fanout => true,
+            Issue28402CapabilityMode::Auto => {
+                issue_28402_should_fanout(speculative_values, auto_max_speculative_values.unwrap())
+            },
+        };
+        if matches!(mode, Issue28402CapabilityMode::Auto)
+            && std::env::var("POLARS_ISSUE_28402_DECODE_TRACE").as_deref() == Ok("1")
+        {
+            eprintln!(
+                "POLARS_ISSUE_28402_SCHEDULE prefix_rows={} payload_columns={} speculative_values={} max_speculative_values={} pipelines={} schedule={}",
+                prefix_rows,
+                payload_columns,
+                speculative_values,
+                auto_max_speculative_values.unwrap(),
+                self.num_pipelines,
+                if fanout_payload {
+                    "fanout"
+                } else {
+                    "materialized"
+                },
+            );
+        }
 
         let mut live_columns = Vec::with_capacity(supported.len() + residual.len());
         for ((field_index, column), mask) in supported_columns.into_iter().zip(supported_masks) {
@@ -1544,7 +1586,8 @@ impl RowGroupDecoder {
                         row_group_data,
                         plan.supported.clone(),
                         plan.residual.clone(),
-                        false,
+                        Issue28402CapabilityMode::Materialized,
+                        None,
                         None,
                         1,
                     )
@@ -1555,8 +1598,21 @@ impl RowGroupDecoder {
                         row_group_data,
                         plan.supported.clone(),
                         plan.residual.clone(),
-                        true,
+                        Issue28402CapabilityMode::Fanout,
                         plan.fanout_min_task_values,
+                        None,
+                        plan.fanout_max_tasks_per_row_group,
+                    )
+                    .await
+                },
+                Issue28402CapabilityMode::Auto => {
+                    self.row_group_data_to_df_prefiltered_capability_materialized(
+                        row_group_data,
+                        plan.supported.clone(),
+                        plan.residual.clone(),
+                        Issue28402CapabilityMode::Auto,
+                        plan.fanout_min_task_values,
+                        plan.auto_max_speculative_values,
                         plan.fanout_max_tasks_per_row_group,
                     )
                     .await
@@ -1997,7 +2053,7 @@ mod tests {
     #[cfg(test)]
     use super::{
         Bitmap, Issue28304AdaptiveState, Issue28304PredicateObservation, Issue28304RollingLevel,
-        calc_cols_per_thread_work_sized,
+        calc_cols_per_thread_work_sized, issue_28402_auto_eligible, issue_28402_should_fanout,
     };
 
     #[test]
@@ -2018,6 +2074,15 @@ mod tests {
             calc_cols_per_thread_work_sized(600_000, 11, 16, 1_000_000),
             2
         );
+    }
+
+    #[test]
+    fn test_issue_28402_one_thread_auto_schedule() {
+        assert!(issue_28402_auto_eligible(500_000, 500_000, 1));
+        assert!(!issue_28402_auto_eligible(499_999, 500_000, 1));
+        assert!(!issue_28402_auto_eligible(500_000, 500_000, 2));
+        assert!(issue_28402_should_fanout(1_000_000, 1_000_000));
+        assert!(!issue_28402_should_fanout(1_000_001, 1_000_000));
     }
 
     #[cfg(test)]
