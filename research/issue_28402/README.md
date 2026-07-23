@@ -11,11 +11,12 @@ conjunction:
 [supported strings, residual Float64]
 ```
 
-Capability staging decodes supported predicates first, combines their masks,
-then decodes residual Float64 values only for surviving rows:
+Capability fanout decodes supported predicates first, combines their masks,
+then decodes residual Float64 and projected payload concurrently for surviving
+rows:
 
 ```text
-[supported strings] -> [materialized Float64 residual]
+[supported strings] -> [Float64 residual, projected payload]
 ```
 
 Execution is enabled only by research environment variable. Default behavior
@@ -23,17 +24,19 @@ is unchanged.
 
 ## Result
 
-Capability split is useful candidate, not safe unconditional rule.
+Native fanout is stable win in tested mixed-capability region.
 
 Final screen contained 90 Float64 cases across prefix retention, predicate
-relationship, projection, and thread count. Materialized split improved 64
-cases and regressed 26; observed range was roughly -34% to +12%. Higher-signal
-confirmation reproduced both outcomes.
+relationship, projection, and thread count. Fanout improved all 90 by roughly
+7.5–34.5%. Higher-signal sparse/dense, narrow/wide confirmation improved all
+12 cases by roughly 2.3–37.3%, with intervals below zero.
 
-Selected-predicate and materialized-residual implementations were close in
-confirmed cases. Mixed-capability consumer therefore does not need PR #28485
-to establish same candidate execution shape. Static capability alone does not
-decide when that shape is safe.
+Ten-million-row issue-like case improved 48.7% at 16 threads and was within
+0.5% of slice-blocked reference. Native fanout median gap to reference was
+1.2% in screen. Dense, wide, 8–16-thread cases remain 10–13% behind reference
+despite retaining roughly 11% win over fallback.
+
+Mixed-capability consumer does not need PR #28485 selected-decode primitive.
 
 See `findings.md` for measurements and limits.
 
@@ -86,6 +89,7 @@ results, rotates plan order, and records wall and process CPU samples.
 ```text
 POLARS_ISSUE_28402_CAPABILITY_STAGING=selected
 POLARS_ISSUE_28402_CAPABILITY_STAGING=materialized
+POLARS_ISSUE_28402_CAPABILITY_STAGING=fanout
 POLARS_ISSUE_28402_DECODE_TRACE=1
 POLARS_ISSUE_28304_TRACE=1
 ```
@@ -94,6 +98,8 @@ POLARS_ISSUE_28304_TRACE=1
   predicate.
 - `materialized` decodes residual values under prefix mask, then evaluates
   residual expression against compact DataFrame.
+- `fanout` decodes residual and projected payload concurrently under prefix,
+  evaluates residual once, then filters compact columns.
 - decode trace counts predicate and projected-column decodes.
 - structured trace records stage rows, duration, and overlap.
 
@@ -108,5 +114,9 @@ POLARS_ISSUE_28304_TRACE=1
 - `results/core-confirmation-curated.json`: sparse/dense, narrow/wide
   confirmation.
 - `results/row-groups-*.json`: fixed-size row-group supply runs.
+- `results/fanout-screening-curated.json`: native fanout full screen.
+- `results/fanout-core-confirmation-curated.json`: sparse/dense,
+  narrow/wide fanout confirmation.
+- `results/fanout-issue-like.json`: 10-million-row issue-like confirmation.
 
 Generated Parquet files and intermediate matrix output stay outside repository.

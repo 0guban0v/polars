@@ -428,6 +428,7 @@ impl Drop for Issue28304DecodeTrace {
 pub(super) enum Issue28402CapabilityMode {
     Selected,
     Materialized,
+    Fanout,
 }
 
 pub(super) struct Issue28402CapabilityPlan {
@@ -1134,6 +1135,7 @@ impl RowGroupDecoder {
         row_group_data: RowGroupData,
         supported: Vec<usize>,
         residual: Vec<usize>,
+        fanout_payload: bool,
     ) -> PolarsResult<DataFrame> {
         debug_assert!(row_group_data.slice.is_none());
         debug_assert!(self.row_index.is_none());
@@ -1218,9 +1220,17 @@ impl RowGroupDecoder {
             live_columns.push((field_index, column.filter(&compact_mask)?));
         }
 
-        let cols_per_thread = residual.len().div_ceil(self.num_pipelines).max(1);
+        let mut deferred_field_indices = residual.clone();
+        if fanout_payload {
+            deferred_field_indices.extend(self.non_predicate_field_indices.iter().copied());
+        }
+        let cols_per_thread = deferred_field_indices
+            .len()
+            .div_ceil(self.num_pipelines)
+            .max(1);
         let task_handles = {
             let residual = residual.clone();
+            let deferred_field_indices = deferred_field_indices.clone();
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
             let prefix_ca = prefix_ca.clone();
@@ -1228,22 +1238,31 @@ impl RowGroupDecoder {
 
             parallelize_first_to_local(
                 TaskPriority::Low,
-                (0..residual.len())
+                (0..deferred_field_indices.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
                         let residual = residual.clone();
+                        let deferred_field_indices = deferred_field_indices.clone();
                         let projected_arrow_fields = projected_arrow_fields.clone();
                         let row_group_data = row_group_data.clone();
                         let prefix_ca = prefix_ca.clone();
                         let prefix_mask = prefix_mask.clone();
 
                         async move {
-                            (offset..offset.saturating_add(cols_per_thread).min(residual.len()))
+                            (offset
+                                ..offset
+                                    .saturating_add(cols_per_thread)
+                                    .min(deferred_field_indices.len()))
                                 .map(|i| {
-                                    let field_index = residual[i];
+                                    let field_index = deferred_field_indices[i];
                                     let projection = &projected_arrow_fields[field_index];
+                                    let role = if residual.contains(&field_index) {
+                                        "capability_residual_decode"
+                                    } else {
+                                        "capability_fanout_payload"
+                                    };
                                     let mut trace = Issue28304DecodeTrace::new(
-                                        "capability_residual_decode",
+                                        role,
                                         projection.arrow_field().name.clone(),
                                         projection_height,
                                         Some(prefix_rows),
@@ -1267,9 +1286,19 @@ impl RowGroupDecoder {
             )
         };
 
-        let mut residual_columns = Vec::with_capacity(residual.len());
+        let mut deferred_columns = Vec::with_capacity(deferred_field_indices.len());
         for task in task_handles {
-            residual_columns.extend(task.await?);
+            deferred_columns.extend(task.await?);
+        }
+        let mut residual_columns = Vec::with_capacity(residual.len());
+        let mut fanout_payload_columns =
+            Vec::with_capacity(deferred_columns.len().saturating_sub(residual.len()));
+        for column in deferred_columns {
+            if residual.contains(&column.0) {
+                residual_columns.push(column);
+            } else {
+                fanout_payload_columns.push(column);
+            }
         }
         residual_columns.sort_unstable_by_key(|(field_index, _)| *field_index);
         let residual_df = unsafe {
@@ -1315,6 +1344,18 @@ impl RowGroupDecoder {
         };
 
         live_columns.extend(residual_columns);
+        if fanout_payload {
+            live_columns.extend(fanout_payload_columns);
+            live_columns.sort_unstable_by_key(|(field_index, _)| *field_index);
+            let output = filter_cols(
+                live_columns.into_iter().map(|(_, column)| column).collect(),
+                &residual_mask,
+                self.target_values_per_thread,
+            )
+            .await?;
+            return Ok(unsafe { DataFrame::new_unchecked(residual_bitmap.set_bits(), output) });
+        }
+
         live_columns.sort_unstable_by_key(|(field_index, _)| *field_index);
         let live_field_indices = live_columns
             .iter()
@@ -1440,6 +1481,16 @@ impl RowGroupDecoder {
                         row_group_data,
                         plan.supported.clone(),
                         plan.residual.clone(),
+                        false,
+                    )
+                    .await
+                },
+                Issue28402CapabilityMode::Fanout => {
+                    self.row_group_data_to_df_prefiltered_capability_materialized(
+                        row_group_data,
+                        plan.supported.clone(),
+                        plan.residual.clone(),
+                        true,
                     )
                     .await
                 },

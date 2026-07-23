@@ -2,7 +2,7 @@
 
 Date: 2026-07-22
 Branch: `research/28402-capability-staging`
-Base: `62e47a9a0c`
+Base: `cfca393a24`
 
 ## Question
 
@@ -16,6 +16,7 @@ Research executor compares:
 global_fallback
 capability_selected
 capability_materialized
+capability_fanout
 slice_blocked
 ```
 
@@ -29,10 +30,10 @@ Plan representation retains two maps:
 - existing fast-path-eligible single-column conjuncts;
 - infallible, elementwise, single-column residual conjuncts excluded by dtype.
 
-Research reader runs supported predicates concurrently, combines exact masks,
-decodes residual columns under combined mask, evaluates residual predicates,
-restores mask to row-group coordinates, then decodes projected payload under
-final mask.
+Sequential research reader decodes residual before projected payload. Fanout
+reader instead decodes residual and projected payload concurrently under
+supported-prefix mask, evaluates residual once, then filters compact columns.
+Fanout does not reconstruct full-row mask because no later decode needs it.
 
 OR, multi-column, nested, mapped, row-index, partial-slice, external-constant,
 fallible, and non-elementwise cases keep current path. Environment variable is
@@ -42,14 +43,14 @@ required; default execution is unchanged.
 
 Focused suite covers:
 
-- selected and materialized residual modes;
+- selected, materialized, and fanout modes;
 - projected supported and projected residual columns;
 - one decode per projected column per row group;
 - empty, all-true, mixed, and null-containing masks;
 - multi-column expression fallback;
 - existing #28304 staged-reader cases.
 
-Final run: 15 passed. Equality and decode trace are both checked because output
+Final run: 19 passed. Equality and decode trace are both checked because output
 equality alone cannot detect duplicate decode.
 
 Structured trace on 25,000-row groups showed supported predicates reading full
@@ -77,8 +78,22 @@ Materialized split:
 | 95% interval above zero | 11 / 90 |
 | Observed range | -34% to +12% |
 
-Screen rejects unconditional capability rule. Five iterations are enough to
-find counterexamples, not estimate production effect.
+Sequential screen rejects residual-then-payload schedule, not capability
+partition itself.
+
+Native fanout:
+
+| Result | Cases |
+|---|---:|
+| Lower median wall | 90 / 90 |
+| Higher median wall | 0 / 90 |
+| Observed range | -34.5% to -7.5% |
+| Within 2% of slice reference | 62 / 90 |
+| Within 5% of slice reference | 83 / 90 |
+
+Median fanout gap to slice reference was 1.2%. Fanout was faster in 19 cases
+and slower in 71. Five-iteration screen establishes stable direction, not
+exact parity.
 
 ## Confirmation
 
@@ -97,6 +112,33 @@ Materialized wall change against global fallback:
 Intervals excluded zero except 60%/one payload/eight threads. Same 60%
 retention regressed at one thread in smaller-row-group screen, so retention
 alone is not stable threshold.
+
+Native fanout wall change against global fallback:
+
+| Prefix retained | Payload columns | 1 thread | 8 threads | 16 threads |
+|---:|---:|---:|---:|---:|
+| 5% | 1 | -33.6% | -37.3% | -25.1% |
+| 5% | 8 | -23.5% | -33.0% | -28.1% |
+| 60% | 1 | -24.9% | -30.8% | -21.3% |
+| 60% | 8 | -2.3% | -10.7% | -10.9% |
+
+All fanout intervals excluded zero. Dense wide case that made slice reference
+2.1% slower at one thread improved 2.3% natively. At 8 and 16 threads fanout
+remained 10–13% behind slice while still improving roughly 11% over fallback.
+
+## Issue-like confirmation
+
+Ten-million-row, ten-row-group, 16-thread run used roughly 7.1% supported
+prefix retention, one payload column, five warmups, and 30 rotated samples:
+
+| Plan | Wall change | Median wall |
+|---|---:|---:|
+| Sequential materialized | -40.2% | 10.512 ms |
+| Native fanout | -48.7% | 9.027 ms |
+| Slice reference | -48.9% | 8.988 ms |
+
+Fanout was 0.4% behind reference and recovered issue's reported roughly 2x
+fallback gap at smaller but structurally equivalent scale.
 
 ## Selected decode versus materialized residual
 
@@ -127,35 +169,24 @@ row-group supply as sole cause.
 
 - Semantics: pass for tested scope.
 - Decode count: pass.
-- Performance: fail for unconditional rule; confirmed regressions reach 9–12%.
-- Simplicity: fail for static capability-only policy.
+- Performance: pass for tested mixed-capability matrix; fanout won all screen
+  and confirmation cases.
+- Native parity: pass for issue-like and median screen; incomplete for dense,
+  wide, high-thread cases.
+- Simplicity: capability fanout needs no learned selector in tested region.
 
-Outcome is conditional win. Do not open production consumer PR and do not
-make #28485 dependency claim from this branch.
+Outcome is broad tested win, not production proof. Do not make #28485
+dependency claim from this branch.
 
 ## Real next experiment
 
-Collapse action space to two choices for mixed-capability conjunction:
+Profile remaining dense/wide high-thread parity gap before adding policy.
+Then test work-conserving frontier: residual decode/eval runs at high priority;
+payload tasks use prefix speculatively only when worker would otherwise idle,
+or final mask when already available. Each column still decodes once.
 
-```text
-current global fallback
-materialized capability split
-```
-
-Run paired row-group blocks instead of row-level model:
-
-1. start with current fallback;
-2. collect prefix joint retention, residual rows, per-stage CPU, row-group
-   size/count, payload width, and pool width;
-3. assign both actions within matched blocks while exploration budget remains;
-4. model paired wall difference with uncertainty;
-5. stage only when upper predictive bound on
-   `staged wall - fallback wall` is below negative safety margin;
-6. refresh on drift and fall back when evidence weak.
-
-First objective is not maximize mean speedup. It is test whether observable
-features can bound regression on held-out dense, high-thread, wide-payload,
-and low-row-group-supply cases. If bound fails, keep production behavior.
+Paired-block prediction is later fallback only if optimized scheduling
+reintroduces conditional regressions.
 
 ## Limits
 

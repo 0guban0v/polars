@@ -386,8 +386,9 @@ impl ParquetReadImpl {
         {
             Ok("1" | "selected") => Some(Issue28402CapabilityMode::Selected),
             Ok("materialized") => Some(Issue28402CapabilityMode::Materialized),
+            Ok("fanout") => Some(Issue28402CapabilityMode::Fanout),
             Ok(value) => panic!(
-                "unknown POLARS_ISSUE_28402_CAPABILITY_STAGING={value:?}; expected selected or materialized"
+                "unknown POLARS_ISSUE_28402_CAPABILITY_STAGING={value:?}; expected selected, materialized, or fanout"
             ),
             Err(_) => None,
         };

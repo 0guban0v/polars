@@ -243,6 +243,7 @@ def run(
             "global_fallback": (pushed_query, None, None),
             "capability_selected": (pushed_query, "selected", None),
             "capability_materialized": (pushed_query, "materialized", None),
+            "capability_fanout": (pushed_query, "fanout", None),
             "slice_blocked": (blocked_query, None, None),
         }
         baseline_name = "global_fallback"

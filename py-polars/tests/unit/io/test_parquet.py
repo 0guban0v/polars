@@ -3261,7 +3261,7 @@ def test_selected_predicate_dense_and_empty_input_28304(
     assert_frame_equal(actual, expected)
 
 
-@pytest.mark.parametrize("capability_mode", ["selected", "materialized"])
+@pytest.mark.parametrize("capability_mode", ["selected", "materialized", "fanout"])
 def test_mixed_predicate_capability_staging_28402(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
@@ -3321,6 +3321,7 @@ def test_mixed_predicate_capability_staging_28402(
     )
 
 
+@pytest.mark.parametrize("capability_mode", ["materialized", "fanout"])
 @pytest.mark.parametrize(
     ("prefix_values", "expected_height"),
     [
@@ -3332,6 +3333,7 @@ def test_mixed_predicate_capability_staging_28402(
 def test_mixed_predicate_capability_mask_edges_28402(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
+    capability_mode: str,
     prefix_values: list[str],
     expected_height: int,
 ) -> None:
@@ -3354,7 +3356,7 @@ def test_mixed_predicate_capability_mask_edges_28402(
 
     plmonkeypatch.setenv(
         "POLARS_ISSUE_28402_CAPABILITY_STAGING",
-        "materialized",
+        capability_mode,
     )
     actual = query.collect(engine="streaming")
 
