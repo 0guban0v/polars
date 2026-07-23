@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - research/28402-capability-staging
+    paths:
+      - crates/polars-stream/src/nodes/io_sources/parquet/init.rs
+      - crates/polars-stream/src/nodes/io_sources/parquet/row_group_decode.rs
+      - research/issue_28402/capability_benchmark.py
+      - research/issue_28402/capability_matrix.py
   workflow_dispatch:
 
 permissions:
@@ -101,8 +106,8 @@ jobs:
             research/issue_28402/phase3_effective_holdout_summary.py \
             --report-root /tmp/phase3-effective-holdout/seed-38402 \
             --report-root /tmp/phase3-effective-holdout/seed-38403 \
-            --base-commit \
-              c0dab4ed02a09af59f11a1f1e869004228ad4878 \
+            --base-commit "$GITHUB_SHA" \
+            --scope "targeted x86 schedule-boundary holdout" \
             --hardware "$cpu_model; GitHub ubuntu-24.04 x86_64" \
             --cache-regime "warm-cache repeated scans" \
             --output /tmp/phase3-effective-holdout/summary.json

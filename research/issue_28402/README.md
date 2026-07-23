@@ -89,6 +89,19 @@ this opportunity. Result supports measured M4 schedule switch; it does not
 validate 500k guard, portable threshold, or production policy. Cells are
 controlled configurations, not independent workloads.
 
+Same frozen matrix then ran without retuning on GitHub `ubuntu-24.04` x86_64,
+an AMD EPYC 7763 virtual machine with four logical CPUs. All 32 controlled
+cells passed same +2% gate. Auto won 477 of 480 paired measurements; three
+individual losses ranged from effectively tied to 1.03%. Every cell-level
+point estimate favored Auto. Weakest point was 2.37% faster, and worst paired
+ratio-of-medians upper bound was 1.19% faster than fallback.
+
+x86 result supports 1M schedule switch on tested x86 system for measured
+one-thread, 4M-row family. It does not validate 500k eligibility guard, other
+x86 systems, or production policy. Hosted virtual runner adds noise and does
+not test AVX-512, many-core behavior, NUMA, cold storage, or hardware classes
+outside observed AMD host.
+
 Pre-eligibility Auto forced fanout whenever pipeline count exceeded one.
 Its 8/16-thread Phase 2 control therefore tested unconditional local fanout,
 not adaptive multi-thread scheduling: 8 of 72 cases regressed over 2%, up to
@@ -97,8 +110,9 @@ fallback must remain available. Results do not prove residual prior is required
 for every bounded multi-thread extension. Current Auto abstains above one
 pipeline.
 
-Phase 3 status is M4-local one-thread schedule candidate with provisional 500k
-eligibility guard. Production policy remains open. See `findings.md`.
+Phase 3 schedule-boundary subphase passes targeted M4 and one hosted x86
+system. Numeric 500k eligibility guard and production policy remain open. See
+`findings.md`.
 
 Mixed-capability consumer does not need PR #28485 selected-decode primitive.
 
@@ -182,6 +196,7 @@ done
   --report-root /private/tmp/phase3-effective-holdout/seed-38402 \
   --report-root /private/tmp/phase3-effective-holdout/seed-38403 \
   --base-commit c0dab4ed02a09af59f11a1f1e869004228ad4878 \
+  --scope "targeted M4 schedule-boundary holdout" \
   --hardware "Apple M4 Max, 16 cores, 64 GB" \
   --cache-regime "warm-cache repeated scans" \
   --output /private/tmp/phase3-effective-holdout/summary.json
@@ -224,6 +239,16 @@ phase3_effective_holdout_summary.py
   32/32 controlled cells passed
   480/480 paired measurements favored Auto
   worst paired ratio-of-medians upper bound: -3.44%
+```
+
+GitHub Actions run `30046019786` repeated frozen matrix on x86_64:
+
+```text
+phase3_effective_holdout_summary.py
+  32/32 controlled cells passed
+  477/480 paired measurements favored Auto
+  weakest point: -2.37%
+  worst paired ratio-of-medians upper bound: -1.19%
 ```
 
 ## Research controls
@@ -288,6 +313,8 @@ POLARS_ISSUE_28304_TRACE=1
   fallback checks against current Auto.
 - `results/phase3-effective-scan-holdout/`: sanitized gate summary and 32 raw
   per-case timing reports for frozen M4 boundary holdout.
+- `results/phase3-x86-schedule-holdout/`: host fingerprint, gate summary, and
+  32 raw reports from frozen GitHub-hosted AMD x86_64 boundary holdout.
 
 Generated Parquet files and intermediate matrix output stay outside repository.
 Older curated matrices omit raw timing samples. Effective-scan holdout retains

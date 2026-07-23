@@ -31,6 +31,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--base-commit", required=True)
+    parser.add_argument(
+        "--scope",
+        required=True,
+        help="bounded hardware and experiment scope described by this summary",
+    )
     parser.add_argument("--hardware", required=True)
     parser.add_argument("--cache-regime", required=True)
     return parser.parse_args()
@@ -226,7 +231,7 @@ def main() -> None:
             "regression_bound": regression_bound,
         },
         "gate": {
-            "scope": "targeted M4 schedule-boundary holdout",
+            "scope": args.scope,
             "controlled_cell_count": len(records),
             "point_wins": point_wins,
             "paired_measurement_wins": paired_wins,

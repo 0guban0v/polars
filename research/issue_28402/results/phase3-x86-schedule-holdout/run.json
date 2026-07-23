@@ -1,0 +1,11 @@
+{
+  "conclusion": "success",
+  "created_at": "2026-07-23T21:24:06Z",
+  "event": "push",
+  "head_branch": "research/28402-capability-staging",
+  "head_sha": "fadf2f0f591dd0f230ba7b9538692374d3855e8a",
+  "run_id": 30046019786,
+  "updated_at": "2026-07-23T22:09:23Z",
+  "url": "https://github.com/0guban0v/polars/actions/runs/30046019786",
+  "workflow": "Issue 28402 x86 holdout"
+}

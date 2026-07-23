@@ -338,6 +338,30 @@ These 32 cells are not independent workload samples. Payload variants reuse
 predicate masks, residual-retention variants reuse generated files, and each
 seed reuses one randomized plan-order sequence across its cells.
 
+### Frozen x86 schedule-boundary holdout
+
+Same 32 cells ran without retuning on GitHub `ubuntu-24.04` x86_64 using AMD
+EPYC 7763 virtual machine with four logical CPUs. All cells passed same +2%
+gate. All cell-level point estimates favored Auto. Weakest point was -2.37%
+and worst paired ratio-of-medians upper bound was -1.19%. Auto won 477 of 480
+paired measurements; three individual losses were 0.002%, 0.11%, and 1.03%.
+
+x86 gains were weaker than matched M4 gains in every cell. Difference in
+Auto-versus-fallback point estimate ranged from 0.7 to 13.0 percentage points,
+with 6.1-point median. This is evidence against treating M4 effect size as
+portable, even though frozen schedule decision passed tested boundary.
+
+All four x86 1.1M clustered, 90%-residual cells again selected materialization
+while local fanout was faster, with 10.5–20.2% regret. Missed opportunity is
+therefore not M4-only, but remains separate from fallback-safety gate.
+
+Result establishes narrow transfer to tested hosted x86 system for measured
+one-thread, 4M-row family. It does not validate 500k eligibility guard, broad
+x86 portability, AVX-512, many-core/NUMA behavior, or production policy. Raw
+samples, execution order, runtime and benchmark fingerprints, exact workflow
+revision, and host fingerprint are under
+`results/phase3-x86-schedule-holdout/`.
+
 ## Issue-like confirmation
 
 Ten-million-row, ten-row-group, 16-thread run used roughly 7.1% supported
@@ -388,6 +412,9 @@ row-group supply as sole cause.
 - One-thread M4 schedule boundary: pass for frozen holdout. Broader
   filter-only, encoding, null, eligibility-boundary, and hardware portability
   controls remain outside this gate.
+- One-thread x86 schedule boundary: pass for same frozen holdout on one
+  GitHub-hosted AMD EPYC 7763 system without retuning. Broader x86 portability
+  remains untested.
 - Eligibility mechanism: pass. Guard uses post-statistics candidate rows.
   Numeric 500k value remains provisional; holdout scans all had 4M candidate
   rows.
@@ -402,26 +429,25 @@ row-group supply as sole cause.
 - Simplicity: value-count proxy is useful candidate. Evidence does not yet
   establish sufficient policy.
 
-Outcome is implemented mechanism plus M4-local one-thread schedule candidate.
-Numeric 500k eligibility guard, portable policy, and production policy remain
-open. Do not make production or #28485 dependency claim from this branch.
+Outcome is implemented mechanism plus one-thread schedule candidate that
+passed targeted M4 and one hosted x86 boundary matrix. Numeric 500k
+eligibility guard, broad portability, and production policy remain open. Do
+not make production or #28485 dependency claim from this branch.
 
 ## Next validation
 
-Run compact same frozen boundary matrix on x86 as next hardware falsification.
-Do not pool M4 and x86 into one threshold fit.
+Validate conservative eligibility cutoff on M4 and x86 next. Test
+post-statistics candidate-row neighborhood with independent seeds and same
+per-cell +2% bound. Goal is conservative supported cutoff, not exact crossover.
 
-An x86 pass is necessary evidence for static threshold portability, not
-sufficient production gate. Next production-candidate matrix must also
-exercise 500k eligibility neighborhood and remaining eligible filter-only,
-encoding, and null controls. If x86 changes schedule-boundary safety, replace
-static threshold with hardware-normalized bytes or decode-cost proxy before
-expanding scope.
+Then exercise remaining eligible filter-only, encoding, null-heavy, and
+variable-width memory controls. Keep M4 and x86 results separate rather than
+pooling threshold fit.
 
 Opportunity optimization is separate. Clustered/high-residual regret supports
-testing residual or payload-cost signal, but only after portability gate and
-only if recovering missed gain is worth policy complexity. Multi-thread,
-paired-block prediction, ML, and CUDA remain deferred.
+testing residual or payload-cost signal, but only after mandatory production
+gates and only if recovering missed gain is worth policy complexity.
+Multi-thread, paired-block prediction, ML, and CUDA remain deferred.
 
 ## Limits
 
@@ -436,7 +462,8 @@ paired-block prediction, ML, and CUDA remain deferred.
   reports retain paired absolute-difference intervals.
 - Earlier supply confirmation changed total rows. Phase 3 row-group-size sweep
   held total rows fixed and exposed 2M-threshold failure.
-- Numeric thresholds remain calibrated only on M4 warm-cache runs.
+- Numeric 1M schedule switch passed targeted M4 and one hosted AMD x86 matrix;
+  500k eligibility guard remains calibrated only on M4 warm-cache screen.
 - Bootstrap treats repeated scan as paired unit; rows are not independent
   samples.
 - Older curated Phase 3 matrices omit raw samples; new holdout retains raw
