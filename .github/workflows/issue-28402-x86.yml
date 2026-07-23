@@ -38,7 +38,7 @@ jobs:
           uv venv --python 3.13
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
-          uv pip install "maturin<=1.12.4" numpy patchelf
+          uv pip install "maturin<=1.12.4" numpy patchelf tomlkit
           uv pip install --no-deps -e py-polars
 
       - name: Record host and compiler
