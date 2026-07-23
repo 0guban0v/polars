@@ -65,6 +65,11 @@ six two-stage plans, and six fully sequential plans.
 - `collapse_findings.md` records defer-one failure and concurrent-prefix confirmation.
 - Curated collapse summaries are `results/issue-28304-collapse-p3-prefix-curated.json` and
   `results/issue-28304-collapse-p4-prefix-curated.json`.
+- `pilot_audit.py` tests whether row-group-0 oracle action transfers to later row groups.
+- `pilot_matrix.py` runs stationary, drifting, and alternating pilot controls in fresh processes.
+- `pilot_findings.md` records why direct pilot-winner reuse failed.
+- Curated pilot summaries are `results/issue-28304-pilot-p3-curated.json` and
+  `results/issue-28304-pilot-p4-curated.json`.
 - Fixed-size profile controls repeat typed SF1 rows into 7- and 16-group files;
   generated Parquet files remain outside repository, while curated JSON stays in `results/`.
 - `research_plan.md` documents hypotheses, decision gates, and reproduction
@@ -95,3 +100,6 @@ with separate `column_iter_to_arrays_selected` API from PR #28485. Research
 code now uses that API, and nine staged-reader tests pass. Targeted TPC-H,
 thread-count, and row-group controls were rerun on ported API. Collapse audit reran full
 three-predicate oracle across density, correlation, topology, thread, and row-group controls.
+Pilot audit timed concurrent-prefix oracle on first row group and seven later groups. Direct
+pilot-winner reuse matched remainder oracle in 5 of 10 three-predicate runs and 4 of 10
+four-predicate runs; one-thread drift produced 10–48% remainder regret.

@@ -1,0 +1,434 @@
+{
+  "configuration": {
+    "bootstrap_resamples": 3000,
+    "iterations": 15,
+    "predicate_count": 4,
+    "remainder_row_groups": 7,
+    "row_group_size": 125000,
+    "scenarios": [
+      "stationary_sparse",
+      "stationary_dense",
+      "sparse_to_dense",
+      "dense_to_sparse",
+      "alternating"
+    ],
+    "seed": 28304,
+    "threads": [
+      1,
+      16
+    ],
+    "warmups": 3
+  },
+  "runs": [
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.008025833,
+        "change_vs_all_at_once": -0.13635132951308604,
+        "pilot_baseline_then_selected": 0.0069315,
+        "regret_vs_static_oracle": 0.052020649139920216,
+        "static_oracle": 0.0065887490000000005,
+        "static_oracle_name": "partition_016_l_shipmode_l_shipinstruct__l_discount__l_quantity"
+      },
+      "pilot_winner": {
+        "class": "concurrent_prefix",
+        "median_wall_seconds": 0.001084917,
+        "name": "partition_003_l_shipmode_l_shipinstruct__l_quantity_l_discount",
+        "stage_spec": "l_shipmode,l_shipinstruct|l_quantity,l_discount"
+      },
+      "pilot_winner_matches_remainder_oracle": false,
+      "pilot_winner_remainder_regret": 0.03508160386381465,
+      "pilot_workload": "sparse",
+      "remainder_oracle": {
+        "class": "concurrent_prefix",
+        "median_wall_seconds": 0.005442083,
+        "name": "partition_016_l_shipmode_l_shipinstruct__l_discount__l_quantity",
+        "stage_spec": "l_shipmode,l_shipinstruct|l_discount|l_quantity"
+      },
+      "remainder_workloads": [
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse"
+      ],
+      "scenario": "stationary_sparse",
+      "threads": 1,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.0002288749999999999,
+        "ci95_low": 0.00000875099999999955,
+        "median": 0.00009629200000000043
+      }
+    },
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.0024172079999999997,
+        "change_vs_all_at_once": 0.0,
+        "pilot_baseline_then_selected": 0.0024172079999999997,
+        "regret_vs_static_oracle": 0.0,
+        "static_oracle": 0.0024172079999999997,
+        "static_oracle_name": "all_pushed"
+      },
+      "pilot_winner": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.000930083,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "pilot_winner_matches_remainder_oracle": false,
+      "pilot_winner_remainder_regret": 0.14083397389573937,
+      "pilot_workload": "sparse",
+      "remainder_oracle": {
+        "class": "concurrent_prefix",
+        "median_wall_seconds": 0.001303542,
+        "name": "partition_003_l_shipmode_l_shipinstruct__l_quantity_l_discount",
+        "stage_spec": "l_shipmode,l_shipinstruct|l_quantity,l_discount"
+      },
+      "remainder_workloads": [
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse"
+      ],
+      "scenario": "stationary_sparse",
+      "threads": 16,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.000320374,
+        "ci95_low": -0.00002754200000000019,
+        "median": 0.000262333
+      }
+    },
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.007789708,
+        "change_vs_all_at_once": 0.0,
+        "pilot_baseline_then_selected": 0.007789708,
+        "regret_vs_static_oracle": 0.0,
+        "static_oracle": 0.007789708,
+        "static_oracle_name": "all_pushed"
+      },
+      "pilot_winner": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.00138575,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "pilot_winner_matches_remainder_oracle": true,
+      "pilot_winner_remainder_regret": 0.0,
+      "pilot_workload": "dense",
+      "remainder_oracle": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.006403958,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "remainder_workloads": [
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense"
+      ],
+      "scenario": "stationary_dense",
+      "threads": 1,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.0,
+        "ci95_low": 0.0,
+        "median": 0.0
+      }
+    },
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.002652292,
+        "change_vs_all_at_once": 0.0,
+        "pilot_baseline_then_selected": 0.002652292,
+        "regret_vs_static_oracle": 0.0,
+        "static_oracle": 0.002652292,
+        "static_oracle_name": "all_pushed"
+      },
+      "pilot_winner": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.001049917,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "pilot_winner_matches_remainder_oracle": true,
+      "pilot_winner_remainder_regret": 0.0,
+      "pilot_workload": "dense",
+      "remainder_oracle": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.001602375,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "remainder_workloads": [
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense"
+      ],
+      "scenario": "stationary_dense",
+      "threads": 16,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.0,
+        "ci95_low": 0.0,
+        "median": 0.0
+      }
+    },
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.0077556249999999995,
+        "change_vs_all_at_once": 0.39980659198968516,
+        "pilot_baseline_then_selected": 0.010856375000000001,
+        "regret_vs_static_oracle": 0.39980659198968516,
+        "static_oracle": 0.0077556249999999995,
+        "static_oracle_name": "all_pushed"
+      },
+      "pilot_winner": {
+        "class": "concurrent_prefix",
+        "median_wall_seconds": 0.001145208,
+        "name": "partition_016_l_shipmode_l_shipinstruct__l_discount__l_quantity",
+        "stage_spec": "l_shipmode,l_shipinstruct|l_discount|l_quantity"
+      },
+      "pilot_winner_matches_remainder_oracle": false,
+      "pilot_winner_remainder_regret": 0.48176966197427773,
+      "pilot_workload": "sparse",
+      "remainder_oracle": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.006436167,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "remainder_workloads": [
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense"
+      ],
+      "scenario": "sparse_to_dense",
+      "threads": 1,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.0032584999999999992,
+        "ci95_low": 0.0028827201000000014,
+        "median": 0.0031086660000000012
+      }
+    },
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.002482084,
+        "change_vs_all_at_once": 0.0,
+        "pilot_baseline_then_selected": 0.002482084,
+        "regret_vs_static_oracle": 0.0,
+        "static_oracle": 0.002482084,
+        "static_oracle_name": "all_pushed"
+      },
+      "pilot_winner": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.000971709,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "pilot_winner_matches_remainder_oracle": true,
+      "pilot_winner_remainder_regret": 0.0,
+      "pilot_workload": "sparse",
+      "remainder_oracle": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.001510375,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "remainder_workloads": [
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense",
+        "dense"
+      ],
+      "scenario": "sparse_to_dense",
+      "threads": 16,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.0,
+        "ci95_low": 0.0,
+        "median": 0.0
+      }
+    },
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.00786425,
+        "change_vs_all_at_once": 0.0,
+        "pilot_baseline_then_selected": 0.00786425,
+        "regret_vs_static_oracle": 0.09309817458129932,
+        "static_oracle": 0.007194459,
+        "static_oracle_name": "partition_003_l_shipmode_l_shipinstruct__l_quantity_l_discount"
+      },
+      "pilot_winner": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.001367333,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "pilot_winner_matches_remainder_oracle": false,
+      "pilot_winner_remainder_regret": 0.21119823655337444,
+      "pilot_workload": "dense",
+      "remainder_oracle": {
+        "class": "concurrent_prefix",
+        "median_wall_seconds": 0.005364041,
+        "name": "partition_015_l_shipmode_l_shipinstruct__l_quantity__l_discount",
+        "stage_spec": "l_shipmode,l_shipinstruct|l_quantity|l_discount"
+      },
+      "remainder_workloads": [
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse"
+      ],
+      "scenario": "dense_to_sparse",
+      "threads": 1,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.001250674300000004,
+        "ci95_low": 0.001049833,
+        "median": 0.0010895829999999999
+      }
+    },
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.002552084,
+        "change_vs_all_at_once": 0.0,
+        "pilot_baseline_then_selected": 0.002552084,
+        "regret_vs_static_oracle": 0.0,
+        "static_oracle": 0.002552084,
+        "static_oracle_name": "all_pushed"
+      },
+      "pilot_winner": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.001039417,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "pilot_winner_matches_remainder_oracle": false,
+      "pilot_winner_remainder_regret": 0.09613550724637698,
+      "pilot_workload": "dense",
+      "remainder_oracle": {
+        "class": "defer_one",
+        "median_wall_seconds": 0.00138,
+        "name": "partition_001_l_shipmode_l_shipinstruct_l_quantity__l_discount",
+        "stage_spec": "l_shipmode,l_shipinstruct,l_quantity|l_discount"
+      },
+      "remainder_workloads": [
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse",
+        "sparse"
+      ],
+      "scenario": "dense_to_sparse",
+      "threads": 16,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.00024641699999999986,
+        "ci95_low": -0.00005958299999999999,
+        "median": 0.00001091599999999992
+      }
+    },
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.008050916,
+        "change_vs_all_at_once": 0.1663733667075895,
+        "pilot_baseline_then_selected": 0.009390374,
+        "regret_vs_static_oracle": 0.1663733667075895,
+        "static_oracle": 0.008050916,
+        "static_oracle_name": "all_pushed"
+      },
+      "pilot_winner": {
+        "class": "concurrent_prefix",
+        "median_wall_seconds": 0.001247333,
+        "name": "partition_016_l_shipmode_l_shipinstruct__l_discount__l_quantity",
+        "stage_spec": "l_shipmode,l_shipinstruct|l_discount|l_quantity"
+      },
+      "pilot_winner_matches_remainder_oracle": false,
+      "pilot_winner_remainder_regret": 0.20671844435441855,
+      "pilot_workload": "sparse",
+      "remainder_oracle": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.006479625,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "remainder_workloads": [
+        "dense",
+        "sparse",
+        "dense",
+        "sparse",
+        "dense",
+        "sparse",
+        "dense"
+      ],
+      "scenario": "alternating",
+      "threads": 1,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.0014239580000000003,
+        "ci95_low": 0.001170458,
+        "median": 0.0013074999999999996
+      }
+    },
+    {
+      "median_sum_proxy": {
+        "all_at_once": 0.002590084,
+        "change_vs_all_at_once": 0.0,
+        "pilot_baseline_then_selected": 0.002590084,
+        "regret_vs_static_oracle": 0.0,
+        "static_oracle": 0.002590084,
+        "static_oracle_name": "all_pushed"
+      },
+      "pilot_winner": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.000928375,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "pilot_winner_matches_remainder_oracle": true,
+      "pilot_winner_remainder_regret": 0.0,
+      "pilot_workload": "sparse",
+      "remainder_oracle": {
+        "class": "all_at_once",
+        "median_wall_seconds": 0.001661709,
+        "name": "all_pushed",
+        "stage_spec": null
+      },
+      "remainder_workloads": [
+        "dense",
+        "sparse",
+        "dense",
+        "sparse",
+        "dense",
+        "sparse",
+        "dense"
+      ],
+      "scenario": "alternating",
+      "threads": 16,
+      "pilot_winner_remainder_wall_difference_seconds": {
+        "ci95_high": 0.0,
+        "ci95_low": 0.0,
+        "median": 0.0
+      }
+    }
+  ]
+}

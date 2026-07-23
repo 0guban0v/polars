@@ -145,8 +145,11 @@ Do not propose default staging until all gates pass:
 - Ported three-predicate collapse audit enumerated all 13 plans across 42 controlled runs;
   concurrent-prefix action set matched exact oracle in every run.
 - Four-predicate audit enumerated all 75 plans. Defer-one had 6.2–38.0% regret in confirmation
-  runs; concurrent-prefix action set matched exact oracle in all four runs. Pilot policy work
-  remains blocked until first-row-group validity is measured.
+  runs; concurrent-prefix action set matched exact oracle in all four runs.
+- Oracle pilot action matched later-group oracle in 5 of 10 three-predicate runs and 4 of 10
+  four-predicate runs. One-thread drift produced 10–48% remainder regret.
+- Direct pilot-winner reuse fails pilot gate. Next work is offline stage-boundary prediction from
+  pilot features and remaining-work context, with no runtime policy until holdout regret passes.
 
 ## Commands
 
@@ -206,4 +209,15 @@ POLARS_MAX_THREADS=4 POLARS_ISSUE_28304_TRACE=1 \
   .venv/bin/python research/issue_28304/benchmark.py \
   --rows 1000000 --row-group-size 1000000 \
   --warmups 0 --iterations 1
+```
+
+Audit first-row-group action stability:
+
+```bash
+POLARS_MAX_THREADS=1 .venv/bin/python \
+  research/issue_28304/pilot_matrix.py \
+  --predicate-count 3 --threads 1,16 \
+  --remainder-row-groups 7 --row-group-size 125000 \
+  --warmups 5 --iterations 30 --bootstrap-resamples 5000 \
+  --output-dir /private/tmp/issue-28304-pilot-p3
 ```
