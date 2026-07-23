@@ -313,6 +313,7 @@ def run(
     warmups: int,
     iterations: int,
     seed: int,
+    include_samples: bool = False,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     queries = {name: factory(path) for name, factory in factories.items()}
     plans = {
@@ -356,7 +357,10 @@ def run(
         name: {metric: summarize(values) for metric, values in query_samples.items()}
         for name, query_samples in samples.items()
     }
-    return {"expected_result": expected, "queries": results}, plans
+    report: dict[str, Any] = {"expected_result": expected, "queries": results}
+    if include_samples:
+        report["samples"] = samples
+    return report, plans
 
 
 def parse_args() -> argparse.Namespace:

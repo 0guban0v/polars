@@ -1,0 +1,62 @@
+{
+  "configuration": {
+    "bootstrap_resamples": 5000,
+    "iterations": 15,
+    "layouts": [
+      "balanced"
+    ],
+    "predicate_count": 4,
+    "restricted_action_set": "concurrent_prefix",
+    "row_group_size": 125000,
+    "rows": 1000000,
+    "seed": 28304,
+    "tail_rows": 1215,
+    "threads": [
+      1,
+      16
+    ],
+    "warmups": 2,
+    "workloads": [
+      "sparse",
+      "disjoint"
+    ]
+  },
+  "runs": [
+    {
+      "workload": "sparse",
+      "layout": "balanced",
+      "threads": 1,
+      "oracle_class": "concurrent_prefix",
+      "restricted_class": "concurrent_prefix",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "sparse",
+      "layout": "balanced",
+      "threads": 16,
+      "oracle_class": "concurrent_prefix",
+      "restricted_class": "concurrent_prefix",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "disjoint",
+      "layout": "balanced",
+      "threads": 1,
+      "oracle_class": "concurrent_prefix",
+      "restricted_class": "concurrent_prefix",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "disjoint",
+      "layout": "balanced",
+      "threads": 16,
+      "oracle_class": "concurrent_prefix",
+      "restricted_class": "concurrent_prefix",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    }
+  ]
+}

@@ -57,6 +57,14 @@ six two-stage plans, and six fully sequential plans.
   stack samples, concurrency traces, and thread/row-group controls.
 - `profile_workload.py` runs isolated all-at-once or staged plans long enough
   for external profiler attachment.
+- `collapse_audit.py` enumerates ordered partitions for three or four predicates and reports
+  restricted-action regret with bootstrap interval. It supports defer-one and concurrent-prefix
+  action sets.
+- `collapse_matrix.py` runs audit in fresh processes across workload, row-group, and thread
+  controls.
+- `collapse_findings.md` records defer-one failure and concurrent-prefix confirmation.
+- Curated collapse summaries are `results/issue-28304-collapse-p3-prefix-curated.json` and
+  `results/issue-28304-collapse-p4-prefix-curated.json`.
 - Fixed-size profile controls repeat typed SF1 rows into 7- and 16-group files;
   generated Parquet files remain outside repository, while curated JSON stays in `results/`.
 - `research_plan.md` documents hypotheses, decision gates, and reproduction
@@ -85,5 +93,5 @@ not discover groups.
 Original timing matrix predates replacing `PredicateFilter::input_selection`
 with separate `column_iter_to_arrays_selected` API from PR #28485. Research
 code now uses that API, and nine staged-reader tests pass. Targeted TPC-H,
-thread-count, and row-group controls were rerun on ported API; full
-density/correlation/topology matrix has not been rerun.
+thread-count, and row-group controls were rerun on ported API. Collapse audit reran full
+three-predicate oracle across density, correlation, topology, thread, and row-group controls.

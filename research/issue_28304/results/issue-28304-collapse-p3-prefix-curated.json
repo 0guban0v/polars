@@ -1,0 +1,411 @@
+{
+  "configuration": {
+    "bootstrap_resamples": 2000,
+    "iterations": 10,
+    "layouts": [
+      "balanced",
+      "short_tail"
+    ],
+    "predicate_count": 3,
+    "restricted_action_set": "concurrent_prefix",
+    "row_group_size": 125000,
+    "rows": 1000000,
+    "seed": 28304,
+    "tail_rows": 1215,
+    "threads": [
+      1,
+      8,
+      16
+    ],
+    "warmups": 2,
+    "workloads": [
+      "sparse",
+      "medium",
+      "dense",
+      "disjoint",
+      "nested",
+      "alternating",
+      "contiguous"
+    ]
+  },
+  "runs": [
+    {
+      "workload": "sparse",
+      "layout": "balanced",
+      "threads": 1,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "sparse",
+      "layout": "balanced",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "sparse",
+      "layout": "balanced",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "sparse",
+      "layout": "short_tail",
+      "threads": 1,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "sparse",
+      "layout": "short_tail",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "sparse",
+      "layout": "short_tail",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "medium",
+      "layout": "balanced",
+      "threads": 1,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "medium",
+      "layout": "balanced",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "medium",
+      "layout": "balanced",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "medium",
+      "layout": "short_tail",
+      "threads": 1,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "medium",
+      "layout": "short_tail",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "medium",
+      "layout": "short_tail",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "dense",
+      "layout": "balanced",
+      "threads": 1,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "dense",
+      "layout": "balanced",
+      "threads": 8,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "dense",
+      "layout": "balanced",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "dense",
+      "layout": "short_tail",
+      "threads": 1,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "dense",
+      "layout": "short_tail",
+      "threads": 8,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "dense",
+      "layout": "short_tail",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "disjoint",
+      "layout": "balanced",
+      "threads": 1,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "disjoint",
+      "layout": "balanced",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "disjoint",
+      "layout": "balanced",
+      "threads": 16,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "disjoint",
+      "layout": "short_tail",
+      "threads": 1,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "disjoint",
+      "layout": "short_tail",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "disjoint",
+      "layout": "short_tail",
+      "threads": 16,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "nested",
+      "layout": "balanced",
+      "threads": 1,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "nested",
+      "layout": "balanced",
+      "threads": 8,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "nested",
+      "layout": "balanced",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "nested",
+      "layout": "short_tail",
+      "threads": 1,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "nested",
+      "layout": "short_tail",
+      "threads": 8,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "nested",
+      "layout": "short_tail",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "alternating",
+      "layout": "balanced",
+      "threads": 1,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "alternating",
+      "layout": "balanced",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "alternating",
+      "layout": "balanced",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "alternating",
+      "layout": "short_tail",
+      "threads": 1,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "alternating",
+      "layout": "short_tail",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "alternating",
+      "layout": "short_tail",
+      "threads": 16,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "contiguous",
+      "layout": "balanced",
+      "threads": 1,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "contiguous",
+      "layout": "balanced",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "contiguous",
+      "layout": "balanced",
+      "threads": 16,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "contiguous",
+      "layout": "short_tail",
+      "threads": 1,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "contiguous",
+      "layout": "short_tail",
+      "threads": 8,
+      "oracle_class": "defer_one",
+      "restricted_class": "defer_one",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    },
+    {
+      "workload": "contiguous",
+      "layout": "short_tail",
+      "threads": 16,
+      "oracle_class": "all_at_once",
+      "restricted_class": "all_at_once",
+      "oracle_in_restricted_action_set": true,
+      "restricted_regret": 0.0
+    }
+  ]
+}

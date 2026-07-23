@@ -141,7 +141,12 @@ Do not propose default staging until all gates pass:
 - Nine staged-reader integration tests pass.
 - Two-arm elapsed-time policy does not meet 16-thread regression target.
 - Targeted TPC-H, thread-count, and row-group controls were rerun after PR
-  #28485 API refactor; full density/correlation/topology matrix remains stale.
+  #28485 API refactor.
+- Ported three-predicate collapse audit enumerated all 13 plans across 42 controlled runs;
+  concurrent-prefix action set matched exact oracle in every run.
+- Four-predicate audit enumerated all 75 plans. Defer-one had 6.2–38.0% regret in confirmation
+  runs; concurrent-prefix action set matched exact oracle in all four runs. Pilot policy work
+  remains blocked until first-row-group validity is measured.
 
 ## Commands
 
