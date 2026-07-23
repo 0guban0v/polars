@@ -148,8 +148,15 @@ Do not propose default staging until all gates pass:
   runs; concurrent-prefix action set matched exact oracle in all four runs.
 - Oracle pilot action matched later-group oracle in 5 of 10 three-predicate runs and 4 of 10
   four-predicate runs. One-thread drift produced 10–48% remainder regret.
-- Direct pilot-winner reuse fails pilot gate. Next work is offline stage-boundary prediction from
-  pilot features and remaining-work context, with no runtime policy until holdout regret passes.
+- Environment-gated rolling executor now implements marginal selectivity, exact joint prefix
+  masks, measured full-decode cost, and conservative task-supply guard.
+- Joint masks prevent 5–7% nested-predicate regression from marginal-only policy.
+- Immediate staged observations reduce 16-thread sparse-to-dense regression from roughly 8% to
+  1–3%, but no unguarded level removes it.
+- Task-supply guard avoids that drift regression but suppresses stationary 16-thread gains up to
+  13 percentage points. No rolling level passes policy gate.
+- Next work is uncertainty-bounded dependency-cost model on unseen workload families. Keep
+  runtime default all-at-once until holdout regression and amortization gates pass.
 
 ## Commands
 
@@ -220,4 +227,17 @@ POLARS_MAX_THREADS=1 .venv/bin/python \
   --remainder-row-groups 7 --row-group-size 125000 \
   --warmups 5 --iterations 30 --bootstrap-resamples 5000 \
   --output-dir /private/tmp/issue-28304-pilot-p3
+```
+
+Audit rolling policy progression:
+
+```bash
+POLARS_MAX_THREADS=1 .venv/bin/python \
+  research/issue_28304/rolling_policy_matrix.py \
+  --predicate-count 3 --threads 1,16 \
+  --scenarios stationary_sparse,stationary_dense,stationary_disjoint,stationary_nested,sparse_to_dense,dense_to_sparse,alternating \
+  --row-groups 64 --row-group-size 125000 \
+  --warmups 2 --iterations 15 --bootstrap-resamples 5000 \
+  --output-dir /private/tmp/issue-28304-rolling \
+  --summary /private/tmp/issue-28304-rolling-summary.json
 ```

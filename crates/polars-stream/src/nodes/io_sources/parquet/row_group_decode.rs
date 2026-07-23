@@ -1,5 +1,6 @@
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Instant;
 
 use polars_async::executor::TaskPriority;
@@ -45,13 +46,289 @@ struct Issue28304DecodeTrace {
 #[derive(Default)]
 pub(super) struct Issue28304AdaptiveState {
     issued: AtomicUsize,
+    completed: AtomicUsize,
     all_at_once_count: AtomicUsize,
     all_at_once_ns: AtomicU64,
     staged_count: AtomicUsize,
     staged_ns: AtomicU64,
+    rolling: Mutex<Issue28304RollingObservations>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Issue28304RollingLevel {
+    Marginal,
+    Joint,
+    Cost,
+    TaskSupply,
+}
+
+impl Issue28304RollingLevel {
+    fn from_env() -> Option<Self> {
+        match std::env::var("POLARS_ISSUE_28304_ROLLING_POLICY").as_deref() {
+            Ok("marginal") => Some(Self::Marginal),
+            Ok("joint") => Some(Self::Joint),
+            Ok("cost") => Some(Self::Cost),
+            Ok("task_supply") => Some(Self::TaskSupply),
+            Ok(value) => panic!(
+                "unknown POLARS_ISSUE_28304_ROLLING_POLICY={value:?}; expected marginal, joint, cost, or task_supply"
+            ),
+            Err(_) => None,
+        }
+    }
+
+    fn uses_joint(self) -> bool {
+        self != Self::Marginal
+    }
+
+    fn uses_cost(self) -> bool {
+        matches!(self, Self::Cost | Self::TaskSupply)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Issue28304RollingEstimate {
+    value: f64,
+    observations: usize,
+}
+
+impl Issue28304RollingEstimate {
+    fn selectivity_prior() -> Self {
+        Self {
+            value: 0.5,
+            observations: 0,
+        }
+    }
+
+    fn update_selectivity(&mut self, value: f64) {
+        // Discount by row group rather than row count so one large group does
+        // not make policy unable to react to distribution drift.
+        self.value = 0.5 * self.value + 0.5 * value;
+        self.observations += 1;
+    }
+
+    fn update_cost(&mut self, value: f64) {
+        self.value = if self.observations == 0 {
+            value
+        } else {
+            0.5 * self.value + 0.5 * value
+        };
+        self.observations += 1;
+    }
+}
+
+#[derive(Default)]
+struct Issue28304RollingObservations {
+    all_at_once_groups: usize,
+    marginal: BTreeMap<usize, Issue28304RollingEstimate>,
+    prefix_joint: BTreeMap<usize, Issue28304RollingEstimate>,
+    full_decode_ns_per_row: BTreeMap<usize, Issue28304RollingEstimate>,
+}
+
+struct Issue28304PredicateObservation {
+    field_index: usize,
+    mask: Bitmap,
+    elapsed_ns: u64,
+}
+
+struct Issue28304RollingDecision {
+    issued: usize,
+    deferred: Option<usize>,
+    predicted_prefix_selectivity: f64,
+    predicted_saved_fraction: f64,
+    in_flight: usize,
+    observed_groups: usize,
+    reason: &'static str,
 }
 
 impl Issue28304AdaptiveState {
+    fn observe_all_at_once(
+        &self,
+        input_rows: usize,
+        observations: &[Issue28304PredicateObservation],
+    ) {
+        if observations.is_empty() || input_rows == 0 {
+            return;
+        }
+
+        let mut state = self.rolling.lock().unwrap();
+        for observation in observations {
+            let marginal = observation.mask.set_bits() as f64 / input_rows as f64;
+            state
+                .marginal
+                .entry(observation.field_index)
+                .or_insert_with(Issue28304RollingEstimate::selectivity_prior)
+                .update_selectivity(marginal);
+            state
+                .full_decode_ns_per_row
+                .entry(observation.field_index)
+                .or_insert(Issue28304RollingEstimate {
+                    value: 0.0,
+                    observations: 0,
+                })
+                .update_cost(observation.elapsed_ns as f64 / input_rows as f64);
+        }
+
+        for deferred in observations {
+            let mut prefix = MutableBitmap::new();
+            let mut prefix_masks = observations
+                .iter()
+                .filter(|observation| observation.field_index != deferred.field_index)
+                .map(|observation| &observation.mask);
+            let Some(first) = prefix_masks.next() else {
+                continue;
+            };
+            prefix.extend_from_bitmap(first);
+            for mask in prefix_masks {
+                <&mut MutableBitmap as std::ops::BitAndAssign<&Bitmap>>::bitand_assign(
+                    &mut &mut prefix,
+                    mask,
+                );
+            }
+            let prefix_selectivity = prefix.set_bits() as f64 / input_rows as f64;
+            state
+                .prefix_joint
+                .entry(deferred.field_index)
+                .or_insert_with(Issue28304RollingEstimate::selectivity_prior)
+                .update_selectivity(prefix_selectivity);
+        }
+        state.all_at_once_groups += 1;
+    }
+
+    fn observe_staged_prefix(
+        &self,
+        input_rows: usize,
+        deferred: usize,
+        prefix_selectivity: f64,
+        observations: &[Issue28304PredicateObservation],
+    ) {
+        if observations.is_empty() || input_rows == 0 {
+            return;
+        }
+
+        let mut state = self.rolling.lock().unwrap();
+        for observation in observations {
+            let marginal = observation.mask.set_bits() as f64 / input_rows as f64;
+            state
+                .marginal
+                .entry(observation.field_index)
+                .or_insert_with(Issue28304RollingEstimate::selectivity_prior)
+                .update_selectivity(marginal);
+            state
+                .full_decode_ns_per_row
+                .entry(observation.field_index)
+                .or_insert(Issue28304RollingEstimate {
+                    value: 0.0,
+                    observations: 0,
+                })
+                .update_cost(observation.elapsed_ns as f64 / input_rows as f64);
+        }
+        state
+            .prefix_joint
+            .entry(deferred)
+            .or_insert_with(Issue28304RollingEstimate::selectivity_prior)
+            .update_selectivity(prefix_selectivity);
+    }
+
+    fn choose_rolling(
+        &self,
+        predicate_field_indices: &[usize],
+        num_pipelines: usize,
+        level: Issue28304RollingLevel,
+    ) -> Issue28304RollingDecision {
+        let issued = self.issued.fetch_add(1, Ordering::Relaxed);
+        let completed = self.completed.load(Ordering::Acquire);
+        let in_flight = issued.saturating_sub(completed) + 1;
+        let state = self.rolling.lock().unwrap();
+        let observed_groups = state.all_at_once_groups;
+
+        let fallback = |reason| Issue28304RollingDecision {
+            issued,
+            deferred: None,
+            predicted_prefix_selectivity: 1.0,
+            predicted_saved_fraction: 0.0,
+            in_flight,
+            observed_groups,
+            reason,
+        };
+
+        if observed_groups < 2 {
+            return fallback("cold_start");
+        }
+        if issued % 8 == 7 {
+            return fallback("refresh");
+        }
+
+        let mut baseline_cost = 0.0;
+        for field_index in predicate_field_indices {
+            let Some(marginal) = state.marginal.get(field_index) else {
+                return fallback("missing_selectivity");
+            };
+            let cost = if level.uses_cost() {
+                let Some(cost) = state.full_decode_ns_per_row.get(field_index) else {
+                    return fallback("missing_cost");
+                };
+                cost.value
+            } else {
+                let _ = marginal;
+                1.0
+            };
+            baseline_cost += cost;
+        }
+
+        let mut best: Option<(usize, f64, f64)> = None;
+        for deferred in predicate_field_indices {
+            let prefix_selectivity = if level.uses_joint() {
+                let Some(joint) = state.prefix_joint.get(deferred) else {
+                    return fallback("missing_joint_selectivity");
+                };
+                joint.value
+            } else {
+                predicate_field_indices
+                    .iter()
+                    .filter(|field_index| *field_index != deferred)
+                    .map(|field_index| state.marginal[field_index].value)
+                    .product()
+            };
+            if prefix_selectivity > 0.05 {
+                continue;
+            }
+            let deferred_cost = if level.uses_cost() {
+                state.full_decode_ns_per_row[deferred].value
+            } else {
+                1.0
+            };
+            let predicted_saved_fraction =
+                deferred_cost * (1.0 - prefix_selectivity) / baseline_cost;
+            if best.is_none_or(|(_, saved, _)| predicted_saved_fraction > saved) {
+                best = Some((*deferred, predicted_saved_fraction, prefix_selectivity));
+            }
+        }
+
+        let Some((deferred, predicted_saved_fraction, predicted_prefix_selectivity)) = best else {
+            return fallback("prefix_not_selective");
+        };
+        if predicted_saved_fraction <= 0.05 {
+            return fallback("gain_below_margin");
+        }
+        if level == Issue28304RollingLevel::TaskSupply && in_flight < num_pipelines {
+            return fallback("insufficient_task_supply");
+        }
+
+        Issue28304RollingDecision {
+            issued,
+            deferred: Some(deferred),
+            predicted_prefix_selectivity,
+            predicted_saved_fraction,
+            in_flight,
+            observed_groups,
+            reason: "predicted_gain",
+        }
+    }
+
+    fn complete_rolling_row_group(&self) {
+        self.completed.fetch_add(1, Ordering::Release);
+    }
+
     fn choose_staged(&self) -> (usize, bool) {
         let issued = self.issued.fetch_add(1, Ordering::Relaxed);
         let all_at_once_count = self.all_at_once_count.load(Ordering::Acquire);
@@ -80,6 +357,7 @@ impl Issue28304AdaptiveState {
         };
         total_ns.fetch_add(elapsed_ns, Ordering::Relaxed);
         count.fetch_add(1, Ordering::Release);
+        self.completed.fetch_add(1, Ordering::Release);
     }
 }
 
@@ -645,12 +923,17 @@ impl RowGroupDecoder {
         let row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
         let scan_predicate = self.predicate.as_ref().unwrap();
+        let rolling_deferred = (Issue28304RollingLevel::from_env().is_some()
+            && stages.len() == 2
+            && stages[1].len() == 1)
+            .then(|| stages[1][0]);
 
         let mut current_mask = Bitmap::new_with_value(true, projection_height);
         let mut live_columns: Vec<(usize, Column)> = Vec::new();
 
         for (stage_index, stage) in stages.into_iter().enumerate() {
             let stage_len = stage.len();
+            let observe_rolling_prefix = stage_index == 0 && rolling_deferred.is_some();
             let input_selection = (stage_index > 0).then(|| current_mask.clone());
             let cols_per_thread = stage_len.div_ceil(self.num_pipelines).max(1);
             let task_handles = {
@@ -683,6 +966,8 @@ impl RowGroupDecoder {
                                             projection_height,
                                             Some(selected_rows),
                                         );
+                                        let rolling_started =
+                                            observe_rolling_prefix.then(Instant::now);
                                         let (col, pred_true_mask) = decode_column_in_filter(
                                             projection.arrow_field(),
                                             true,
@@ -696,7 +981,11 @@ impl RowGroupDecoder {
                                             trace
                                                 .finish(col.len(), Some(pred_true_mask.set_bits()));
                                         }
-                                        Ok((field_index, col, pred_true_mask))
+                                        let rolling_elapsed_ns = rolling_started.map(|started| {
+                                            started.elapsed().as_nanos().min(u64::MAX as u128)
+                                                as u64
+                                        });
+                                        Ok((field_index, col, pred_true_mask, rolling_elapsed_ns))
                                     })
                                     .collect::<PolarsResult<UnitVec<_>>>()
                             }
@@ -706,9 +995,17 @@ impl RowGroupDecoder {
 
             let mut stage_columns = Vec::with_capacity(stage_len);
             let mut stage_masks = Vec::with_capacity(stage_len);
+            let mut rolling_observations = Vec::with_capacity(stage_len);
             for fut in task_handles {
-                for (field_index, column, mask) in fut.await? {
+                for (field_index, column, mask, elapsed_ns) in fut.await? {
                     stage_columns.push((field_index, column));
+                    if let Some(elapsed_ns) = elapsed_ns {
+                        rolling_observations.push(Issue28304PredicateObservation {
+                            field_index,
+                            mask: mask.clone(),
+                            elapsed_ns,
+                        });
+                    }
                     stage_masks.push(mask);
                 }
             }
@@ -722,6 +1019,14 @@ impl RowGroupDecoder {
                 );
             }
             let combined = combined.freeze();
+            if let Some(deferred) = rolling_deferred.filter(|_| stage_index == 0) {
+                self.issue_28304_adaptive_state.observe_staged_prefix(
+                    projection_height,
+                    deferred,
+                    combined.set_bits() as f64 / projection_height as f64,
+                    &rolling_observations,
+                );
+            }
             let combined_ca = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, combined.clone());
 
             if stage_index > 0 {
@@ -806,6 +1111,54 @@ impl RowGroupDecoder {
         &self,
         row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
+        if let Some(level) = Issue28304RollingLevel::from_env() {
+            let decision = self.issue_28304_adaptive_state.choose_rolling(
+                &self.predicate_field_indices,
+                self.num_pipelines,
+                level,
+            );
+            let deferred_name = decision.deferred.map(|field_index| {
+                self.projected_arrow_fields[field_index]
+                    .output_name()
+                    .to_string()
+            });
+            let result = if let Some(deferred) = decision.deferred {
+                let first_stage = self
+                    .predicate_field_indices
+                    .iter()
+                    .copied()
+                    .filter(|field_index| *field_index != deferred)
+                    .collect();
+                self.row_group_data_to_df_prefiltered_staged(
+                    row_group_data,
+                    vec![first_stage, vec![deferred]],
+                )
+                .await
+            } else {
+                self.row_group_data_to_df_prefiltered_all_at_once(row_group_data, true)
+                    .await
+            };
+            self.issue_28304_adaptive_state.complete_rolling_row_group();
+            if std::env::var("POLARS_ISSUE_28304_POLICY_TRACE").as_deref() == Ok("1") {
+                eprintln!(
+                    "POLARS_ISSUE_28304_ROLLING issued={} level={level:?} plan={} deferred={} predicted_prefix_selectivity={:.6} predicted_saved_fraction={:.6} in_flight={} observed_groups={} reason={}",
+                    decision.issued,
+                    if decision.deferred.is_some() {
+                        "staged"
+                    } else {
+                        "all_at_once"
+                    },
+                    deferred_name.as_deref().unwrap_or("none"),
+                    decision.predicted_prefix_selectivity,
+                    decision.predicted_saved_fraction,
+                    decision.in_flight,
+                    decision.observed_groups,
+                    decision.reason,
+                );
+            }
+            return result;
+        }
+
         if let Some(stages) = self.issue_28304_stages() {
             if std::env::var("POLARS_ISSUE_28304_ADAPTIVE").as_deref() == Ok("1") {
                 let (issued, staged) = self.issue_28304_adaptive_state.choose_staged();
@@ -814,7 +1167,7 @@ impl RowGroupDecoder {
                     self.row_group_data_to_df_prefiltered_staged(row_group_data, stages)
                         .await
                 } else {
-                    self.row_group_data_to_df_prefiltered_all_at_once(row_group_data)
+                    self.row_group_data_to_df_prefiltered_all_at_once(row_group_data, false)
                         .await
                 };
                 let elapsed_ns = started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
@@ -833,13 +1186,14 @@ impl RowGroupDecoder {
                 .await;
         }
 
-        self.row_group_data_to_df_prefiltered_all_at_once(row_group_data)
+        self.row_group_data_to_df_prefiltered_all_at_once(row_group_data, false)
             .await
     }
 
     async fn row_group_data_to_df_prefiltered_all_at_once(
         &self,
         row_group_data: RowGroupData,
+        observe_rolling: bool,
     ) -> PolarsResult<DataFrame> {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
         assert!(self.predicate_field_indices.len() <= self.projected_arrow_fields.len());
@@ -903,8 +1257,8 @@ impl RowGroupDecoder {
                                     .saturating_add(cols_per_thread)
                                     .min(predicate_field_indices.len()))
                                 .map(|i| {
-                                    let projection =
-                                        &projected_arrow_fields[predicate_field_indices[i]];
+                                    let field_index = predicate_field_indices[i];
+                                    let projection = &projected_arrow_fields[field_index];
 
                                     if use_column_predicates {
                                         debug_assert!(matches!(
@@ -919,6 +1273,7 @@ impl RowGroupDecoder {
                                         projection_height,
                                         None,
                                     );
+                                    let rolling_started = observe_rolling.then(Instant::now);
                                     let (col, pred_true_mask) = decode_column_in_filter(
                                         projection.arrow_field(),
                                         use_column_predicates,
@@ -933,7 +1288,11 @@ impl RowGroupDecoder {
                                         trace.finish(col.len(), Some(pred_true_mask.set_bits()));
                                     }
 
-                                    Ok((col, pred_true_mask))
+                                    let rolling_elapsed_ns = rolling_started.map(|started| {
+                                        started.elapsed().as_nanos().min(u64::MAX as u128) as u64
+                                    });
+
+                                    Ok((field_index, col, pred_true_mask, rolling_elapsed_ns))
                                 })
                                 .collect::<PolarsResult<UnitVec<_>>>()
                         }
@@ -941,11 +1300,23 @@ impl RowGroupDecoder {
             )
         };
 
+        let mut rolling_observations = Vec::with_capacity(masks.capacity());
         for fut in task_handles {
-            for (c, m) in fut.await? {
+            for (field_index, c, m, elapsed_ns) in fut.await? {
                 live_columns.push(c);
+                if let Some(elapsed_ns) = elapsed_ns {
+                    rolling_observations.push(Issue28304PredicateObservation {
+                        field_index,
+                        mask: m.clone(),
+                        elapsed_ns,
+                    });
+                }
                 masks.push(m);
             }
+        }
+        if observe_rolling {
+            self.issue_28304_adaptive_state
+                .observe_all_at_once(projection_height, &rolling_observations);
         }
 
         let (live_df_filtered, mut mask) = if use_column_predicates {
@@ -1164,6 +1535,69 @@ fn decode_column_prefiltered(
 }
 
 mod tests {
+    #[cfg(test)]
+    use super::{
+        Bitmap, Issue28304AdaptiveState, Issue28304PredicateObservation, Issue28304RollingLevel,
+    };
+
+    #[cfg(test)]
+    fn rolling_observations() -> Vec<Issue28304PredicateObservation> {
+        vec![
+            Issue28304PredicateObservation {
+                field_index: 0,
+                mask: Bitmap::from_iter([
+                    true, false, false, false, false, false, false, false, false, false,
+                ]),
+                elapsed_ns: 100,
+            },
+            Issue28304PredicateObservation {
+                field_index: 1,
+                mask: Bitmap::from_iter([
+                    false, true, false, false, false, false, false, false, false, false,
+                ]),
+                elapsed_ns: 100,
+            },
+            Issue28304PredicateObservation {
+                field_index: 2,
+                mask: Bitmap::from_iter([true; 10]),
+                elapsed_ns: 1_000,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_issue_28304_rolling_policy_progression() {
+        let state = Issue28304AdaptiveState::default();
+        let predicates = [0, 1, 2];
+
+        let cold = state.choose_rolling(&predicates, 1, Issue28304RollingLevel::Marginal);
+        assert_eq!(cold.deferred, None);
+        assert_eq!(cold.reason, "cold_start");
+
+        for _ in 0..6 {
+            state.observe_all_at_once(10, &rolling_observations());
+        }
+
+        let marginal = state.choose_rolling(&predicates, 1, Issue28304RollingLevel::Marginal);
+        assert_eq!(marginal.deferred, Some(2));
+
+        let joint = state.choose_rolling(&predicates, 1, Issue28304RollingLevel::Joint);
+        assert_eq!(joint.deferred, Some(2));
+
+        let cost = state.choose_rolling(&predicates, 1, Issue28304RollingLevel::Cost);
+        assert_eq!(cost.deferred, Some(2));
+
+        let task_supply = state.choose_rolling(&predicates, 16, Issue28304RollingLevel::TaskSupply);
+        assert_eq!(task_supply.deferred, None);
+        assert_eq!(task_supply.reason, "insufficient_task_supply");
+
+        let observations = rolling_observations();
+        state.observe_staged_prefix(10, 2, 0.9, &observations[..2]);
+        let drift = state.choose_rolling(&predicates, 1, Issue28304RollingLevel::Joint);
+        assert_eq!(drift.deferred, None);
+        assert_eq!(drift.reason, "prefix_not_selective");
+    }
+
     #[test]
     fn test_calc_cols_per_thread() {
         use super::calc_cols_per_thread;

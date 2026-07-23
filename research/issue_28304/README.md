@@ -70,6 +70,13 @@ six two-stage plans, and six fully sequential plans.
 - `pilot_findings.md` records why direct pilot-winner reuse failed.
 - Curated pilot summaries are `results/issue-28304-pilot-p3-curated.json` and
   `results/issue-28304-pilot-p4-curated.json`.
+- `rolling_policy_audit.py` runs four cumulative online policy levels against
+  all-at-once and fixed concurrent-prefix candidates.
+- `rolling_policy_matrix.py` runs stationary, drifting, and alternating files in fresh
+  processes at configured thread counts.
+- `rolling_policy_findings.md` records why joint masks are necessary, how immediate staged
+  feedback reduces drift regret, and why no tested level is ready for default execution.
+- Curated rolling summary is `results/issue-28304-rolling-policy-p3-curated.json`.
 - Fixed-size profile controls repeat typed SF1 rows into 7- and 16-group files;
   generated Parquet files remain outside repository, while curated JSON stays in `results/`.
 - `research_plan.md` documents hypotheses, decision gates, and reproduction
@@ -86,12 +93,19 @@ and timing distributions. Runs did not record CPU model.
 ```text
 POLARS_ISSUE_28304_STAGES=<comma-and-pipe stage specification>
 POLARS_ISSUE_28304_ADAPTIVE=1
+POLARS_ISSUE_28304_ROLLING_POLICY=<marginal|joint|cost|task_supply>
+POLARS_ISSUE_28304_POLICY_TRACE=1
 POLARS_ISSUE_28304_TRACE=1
 ```
 
 `POLARS_ISSUE_28304_ADAPTIVE=1` requires an explicit staged candidate. It
 chooses only between current all-at-once execution and that candidate. It does
 not discover groups.
+
+`POLARS_ISSUE_28304_ROLLING_POLICY` enables research-only defer-one selector. It starts from
+all-at-once, updates observations from completed row groups, and chooses later row groups from
+one of four cumulative information levels. Without this variable, executor behavior is
+unchanged.
 
 ## Measurement boundary
 
@@ -103,3 +117,9 @@ three-predicate oracle across density, correlation, topology, thread, and row-gr
 Pilot audit timed concurrent-prefix oracle on first row group and seven later groups. Direct
 pilot-winner reuse matched remainder oracle in 5 of 10 three-predicate runs and 4 of 10
 four-predicate runs; one-thread drift produced 10–48% remainder regret.
+
+Rolling-policy audit evaluated marginal selectivity, joint masks, measured decode cost, and
+task-supply guard over 64-row-group stationary and drifting files. Joint masks removed nested
+predicate mistake. Immediate staged feedback reduced 16-thread sparse-to-dense regression from
+roughly 8% to 1–3%, but did not remove it. Conservative task guard avoided that regression while
+suppressing useful stationary staging. No tested rolling level passes policy gate.

@@ -287,6 +287,7 @@ def execute(
     stage_spec: str | None = None,
     *,
     adaptive: bool = False,
+    rolling_policy: str | None = None,
 ) -> tuple[Any, float, float]:
     if stage_spec is None:
         os.environ.pop("POLARS_ISSUE_28304_STAGES", None)
@@ -296,6 +297,10 @@ def execute(
         os.environ["POLARS_ISSUE_28304_ADAPTIVE"] = "1"
     else:
         os.environ.pop("POLARS_ISSUE_28304_ADAPTIVE", None)
+    if rolling_policy is None:
+        os.environ.pop("POLARS_ISSUE_28304_ROLLING_POLICY", None)
+    else:
+        os.environ["POLARS_ISSUE_28304_ROLLING_POLICY"] = rolling_policy
     wall_start = time.perf_counter_ns()
     cpu_start = time.process_time_ns()
     result = query.collect(engine="streaming").item()
@@ -314,7 +319,9 @@ def run(
     iterations: int,
     seed: int,
     include_samples: bool = False,
+    rolling_policies: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
+    rolling_policies = rolling_policies or {}
     queries = {name: factory(path) for name, factory in factories.items()}
     plans = {
         name: query.explain(optimized=True, engine="streaming")
@@ -324,7 +331,10 @@ def run(
     expected: Any | None = None
     for name, query in queries.items():
         result, _, _ = execute(
-            query, stage_specs.get(name), adaptive=name in adaptive_names
+            query,
+            stage_specs.get(name),
+            adaptive=name in adaptive_names,
+            rolling_policy=rolling_policies.get(name),
         )
         if expected is None:
             expected = result
@@ -334,7 +344,12 @@ def run(
 
     for _ in range(warmups):
         for name, query in queries.items():
-            execute(query, stage_specs.get(name), adaptive=name in adaptive_names)
+            execute(
+                query,
+                stage_specs.get(name),
+                adaptive=name in adaptive_names,
+                rolling_policy=rolling_policies.get(name),
+            )
 
     samples: dict[str, dict[str, list[float]]] = {
         name: {"wall_seconds": [], "cpu_seconds": []} for name in queries
@@ -349,6 +364,7 @@ def run(
                 queries[name],
                 stage_specs.get(name),
                 adaptive=name in adaptive_names,
+                rolling_policy=rolling_policies.get(name),
             )
             samples[name]["wall_seconds"].append(wall_seconds)
             samples[name]["cpu_seconds"].append(cpu_seconds)
