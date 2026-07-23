@@ -10,7 +10,9 @@ use polars_io::prelude::ParallelStrategy;
 use polars_utils::IdxSize;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
-use super::row_group_decode::RowGroupDecoder;
+use super::row_group_decode::{
+    Issue28402CapabilityMode, Issue28402CapabilityPlan, RowGroupDecoder,
+};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -362,16 +364,73 @@ impl ParquetReadImpl {
             )
         }
 
-        let allow_column_predicates = predicate.as_ref().is_some_and(|p| {
-            p.column_predicates.is_sumwise_complete
-                && !projected_arrow_fields.iter().any(|f| {
-                    matches!(f.arrow_field().dtype(), ArrowDataType::FixedSizeBinary(_))
-                        && p.column_predicates.predicates.contains_key(f.output_name())
-                })
-        }) && row_index.is_none()
+        let column_predicate_shape_supported = row_index.is_none()
             && !projected_arrow_fields.iter().any(|x| {
                 x.arrow_field().dtype().is_nested()
                     || matches!(x, ArrowFieldProjection::Mapped { .. })
+            });
+        let has_fixed_size_binary_predicate = predicate.as_ref().is_some_and(|p| {
+            projected_arrow_fields.iter().any(|f| {
+                matches!(f.arrow_field().dtype(), ArrowDataType::FixedSizeBinary(_))
+                    && p.column_predicates.predicates.contains_key(f.output_name())
+            })
+        });
+        let allow_column_predicates = predicate.as_ref().is_some_and(|p| {
+            p.column_predicates.is_sumwise_complete && !has_fixed_size_binary_predicate
+        }) && column_predicate_shape_supported;
+
+        let issue_28402_capability_mode = match std::env::var(
+            "POLARS_ISSUE_28402_CAPABILITY_STAGING",
+        )
+        .as_deref()
+        {
+            Ok("1" | "selected") => Some(Issue28402CapabilityMode::Selected),
+            Ok("materialized") => Some(Issue28402CapabilityMode::Materialized),
+            Ok(value) => panic!(
+                "unknown POLARS_ISSUE_28402_CAPABILITY_STAGING={value:?}; expected selected or materialized"
+            ),
+            Err(_) => None,
+        };
+        let issue_28402_capability_plan = issue_28402_capability_mode
+            .filter(|_| column_predicate_shape_supported && !has_fixed_size_binary_predicate)
+            .and_then(|mode| {
+                let predicate = predicate.as_ref()?;
+                let column_predicates = predicate.column_predicates.as_ref();
+                if !column_predicates.is_sumwise_partitionable
+                    || column_predicates.is_sumwise_complete
+                    || column_predicates.predicates.is_empty()
+                    || column_predicates.residual_predicates.is_empty()
+                {
+                    return None;
+                }
+
+                let mut supported = Vec::new();
+                let mut residual = Vec::new();
+                for &field_index in predicate_field_indices.iter() {
+                    let name = projected_arrow_fields[field_index].output_name();
+                    if column_predicates.predicates.contains_key(name) {
+                        supported.push(field_index);
+                    } else if column_predicates.residual_predicates.contains_key(name) {
+                        residual.push(field_index);
+                    } else {
+                        return None;
+                    }
+                }
+
+                if supported.len() + residual.len()
+                    != column_predicates.predicates.len()
+                        + column_predicates.residual_predicates.len()
+                {
+                    return None;
+                }
+
+                (!supported.is_empty() && !residual.is_empty()).then_some(
+                    Issue28402CapabilityPlan {
+                        supported,
+                        residual,
+                        mode,
+                    },
+                )
             });
 
         RowGroupDecoder {
@@ -385,6 +444,7 @@ impl ParquetReadImpl {
             non_predicate_field_indices,
             target_values_per_thread,
             issue_28304_adaptive_state: Default::default(),
+            issue_28402_capability_plan,
         }
     }
 }

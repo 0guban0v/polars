@@ -52,7 +52,10 @@ impl fmt::Debug for ScanPredicate {
 pub struct PhysicalColumnPredicates {
     pub predicates:
         PlHashMap<PlSmallStr, (Arc<dyn PhysicalExpr>, Option<SpecializedColumnPredicate>)>,
+    pub residual_predicates:
+        PlHashMap<PlSmallStr, (Arc<dyn PhysicalExpr>, Option<SpecializedColumnPredicate>)>,
     pub is_sumwise_complete: bool,
+    pub is_sumwise_partitionable: bool,
 }
 
 /// Helper to implement [`SkipBatchPredicate`].
@@ -200,7 +203,14 @@ impl ScanPredicate {
                     .iter()
                     .map(|(n, (p, s))| (n.clone(), (phys_expr_to_io_expr(p.clone()), s.clone())))
                     .collect(),
+                residual_predicates: self
+                    .column_predicates
+                    .residual_predicates
+                    .iter()
+                    .map(|(n, (p, s))| (n.clone(), (phys_expr_to_io_expr(p.clone()), s.clone())))
+                    .collect(),
                 is_sumwise_complete: self.column_predicates.is_sumwise_complete,
+                is_sumwise_partitionable: self.column_predicates.is_sumwise_partitionable,
             }),
             hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
             hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,

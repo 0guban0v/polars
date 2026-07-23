@@ -403,7 +403,10 @@ pub trait SkipBatchPredicate: Send + Sync {
 pub struct ColumnPredicates {
     pub predicates:
         PlHashMap<PlSmallStr, (Arc<dyn PhysicalIoExpr>, Option<SpecializedColumnPredicate>)>,
+    pub residual_predicates:
+        PlHashMap<PlSmallStr, (Arc<dyn PhysicalIoExpr>, Option<SpecializedColumnPredicate>)>,
     pub is_sumwise_complete: bool,
+    pub is_sumwise_partitionable: bool,
 }
 
 // I want to be explicit here.
@@ -412,7 +415,9 @@ impl Default for ColumnPredicates {
     fn default() -> Self {
         Self {
             predicates: PlHashMap::default(),
+            residual_predicates: PlHashMap::default(),
             is_sumwise_complete: false,
+            is_sumwise_partitionable: false,
         }
     }
 }
@@ -506,8 +511,10 @@ impl ScanIOPredicate {
         }
 
         let mut column_predicates = self.column_predicates.as_ref().clone();
+        column_predicates.is_sumwise_partitionable = false;
         for (c, _) in constant_columns.iter() {
             column_predicates.predicates.remove(c);
+            column_predicates.residual_predicates.remove(c);
         }
         self.column_predicates = Arc::new(column_predicates);
 

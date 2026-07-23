@@ -13,15 +13,33 @@ use polars_utils::pl_str::PlSmallStr;
 use super::get_binary_expr_col_and_lv;
 use crate::dsl::Operator;
 use crate::plans::aexpr::evaluate::{constant_evaluate, into_column};
+use crate::plans::aexpr::properties::is_elementwise_rec;
 use crate::plans::{
     AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter, aexpr_to_leaf_names_iter,
 };
 
 pub struct ColumnPredicates {
     pub predicates: PlIndexMap<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>,
+    pub residual_predicates: PlIndexMap<PlSmallStr, Node>,
 
     /// Are all column predicates AND-ed together the original predicate.
     pub is_sumwise_complete: bool,
+
+    /// Can `predicates` and `residual_predicates` be AND-ed together to recover
+    /// the original predicate.
+    pub is_sumwise_partitionable: bool,
+}
+
+fn is_infallible_rec(root: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let mut work = vec![root];
+    while let Some(node) = work.pop() {
+        let ae = expr_arena.get(node);
+        if ae.is_fallible_top_level(expr_arena) {
+            return false;
+        }
+        ae.children_rev(&mut work);
+    }
+    true
 }
 
 pub fn aexpr_to_column_predicates(
@@ -31,7 +49,8 @@ pub fn aexpr_to_column_predicates(
 ) -> ColumnPredicates {
     let mut predicates =
         PlIndexMap::<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>::default();
-    let mut is_sumwise_complete = true;
+    let mut residual_predicates = PlIndexMap::<PlSmallStr, Node>::default();
+    let mut is_sumwise_partitionable = true;
 
     let minterms = MintermIter::new(root, expr_arena).collect::<Vec<_>>();
 
@@ -41,48 +60,48 @@ pub fn aexpr_to_column_predicates(
         leaf_names.extend(aexpr_to_leaf_names_iter(minterm, expr_arena).cloned());
 
         if leaf_names.len() != 1 {
-            is_sumwise_complete = false;
+            is_sumwise_partitionable = false;
             continue;
         }
 
         let column = leaf_names.pop().unwrap();
         let Some(dtype) = schema.get(&column) else {
-            is_sumwise_complete = false;
+            is_sumwise_partitionable = false;
             continue;
         };
 
         // We really don't want to deal with these types.
         use DataType as D;
-        match dtype {
+        let fast_path_eligible = match dtype {
             #[cfg(feature = "dtype-categorical")]
-            D::Enum(_, _) | D::Categorical(_, _) => {
-                is_sumwise_complete = false;
-                continue;
-            },
+            D::Enum(_, _) | D::Categorical(_, _) => false,
             #[cfg(feature = "dtype-decimal")]
-            D::Decimal(_, _) => {
-                is_sumwise_complete = false;
-                continue;
-            },
+            D::Decimal(_, _) => false,
             #[cfg(feature = "object")]
-            D::Object(_) => {
-                is_sumwise_complete = false;
-                continue;
-            },
+            D::Object(_) => false,
             #[cfg(feature = "dtype-f16")]
-            D::Float16 => {
-                is_sumwise_complete = false;
+            D::Float16 => false,
+            D::Float32 | D::Float64 => false,
+            _ if dtype.is_nested() => false,
+            _ => true,
+        };
+
+        if !fast_path_eligible {
+            if !is_elementwise_rec(minterm, expr_arena) || !is_infallible_rec(minterm, expr_arena) {
+                is_sumwise_partitionable = false;
                 continue;
-            },
-            D::Float32 | D::Float64 => {
-                is_sumwise_complete = false;
-                continue;
-            },
-            _ if dtype.is_nested() => {
-                is_sumwise_complete = false;
-                continue;
-            },
-            _ => {},
+            }
+            residual_predicates
+                .entry(column)
+                .and_modify(|node| {
+                    *node = expr_arena.add(AExpr::BinaryExpr {
+                        left: *node,
+                        op: Operator::LogicalAnd,
+                        right: minterm,
+                    });
+                })
+                .or_insert(minterm);
+            continue;
         }
 
         let dtype = dtype.clone();
@@ -292,9 +311,12 @@ pub fn aexpr_to_column_predicates(
             });
     }
 
+    let is_sumwise_complete = is_sumwise_partitionable && residual_predicates.is_empty();
     ColumnPredicates {
         predicates,
+        residual_predicates,
         is_sumwise_complete,
+        is_sumwise_partitionable,
     }
 }
 
@@ -411,6 +433,50 @@ mod tests {
                 panic!("{predicate:?} is unexpected for {expr:?}");
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn mixed_capability_predicates_preserve_residual_conjunct() -> PolarsResult<()> {
+        let mut arena = Arena::new();
+        let schema = Schema::from_iter_check_duplicates([
+            ("i".into(), DataType::Int64),
+            ("f".into(), DataType::Float64),
+        ])?;
+        let expr = col("i")
+            .gt(typed_lit(5i64))
+            .logical_and(col("f").lt(typed_lit(10.0f64)));
+        let mut ctx = ExprToIRContext::new(&mut arena, &schema);
+        let expr_ir = to_expr_ir(expr, &mut ctx)?;
+
+        let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
+
+        assert!(column_predicates.predicates.contains_key("i"));
+        assert!(column_predicates.residual_predicates.contains_key("f"));
+        assert!(!column_predicates.is_sumwise_complete);
+        assert!(column_predicates.is_sumwise_partitionable);
+        Ok(())
+    }
+
+    #[test]
+    fn fallible_residual_predicate_is_not_partitionable() -> PolarsResult<()> {
+        let mut arena = Arena::new();
+        let schema = Schema::from_iter_check_duplicates([
+            ("i".into(), DataType::Int64),
+            ("f".into(), DataType::Float64),
+        ])?;
+        let expr = col("i")
+            .gt(typed_lit(5i64))
+            .logical_and(col("f").strict_cast(DataType::Int64).lt(typed_lit(10i64)));
+        let mut ctx = ExprToIRContext::new(&mut arena, &schema);
+        let expr_ir = to_expr_ir(expr, &mut ctx)?;
+
+        let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
+
+        assert!(column_predicates.predicates.contains_key("i"));
+        assert!(column_predicates.residual_predicates.is_empty());
+        assert!(!column_predicates.is_sumwise_complete);
+        assert!(!column_predicates.is_sumwise_partitionable);
         Ok(())
     }
 

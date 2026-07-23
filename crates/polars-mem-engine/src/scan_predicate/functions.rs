@@ -165,8 +165,30 @@ pub fn create_scan_predicate(
                 "  is_sumwise_complete: {}",
                 column_predicates.is_sumwise_complete
             );
+            eprintln!(
+                "  is_sumwise_partitionable: {}",
+                column_predicates.is_sumwise_partitionable
+            );
             eprintln!("}}");
         }
+        let residual_predicates = column_predicates
+            .residual_predicates
+            .into_iter()
+            .map(|(n, p)| {
+                PolarsResult::Ok((
+                    n,
+                    (
+                        create_physical_expr(
+                            &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
+                            expr_arena,
+                            schema,
+                            state,
+                        )?,
+                        None,
+                    ),
+                ))
+            })
+            .collect::<PolarsResult<PlHashMap<_, _>>>()?;
         PhysicalColumnPredicates {
             predicates: column_predicates
                 .predicates
@@ -186,12 +208,16 @@ pub fn create_scan_predicate(
                     ))
                 })
                 .collect::<PolarsResult<PlHashMap<_, _>>>()?,
+            residual_predicates,
             is_sumwise_complete: column_predicates.is_sumwise_complete,
+            is_sumwise_partitionable: column_predicates.is_sumwise_partitionable,
         }
     } else {
         PhysicalColumnPredicates {
             predicates: PlHashMap::default(),
+            residual_predicates: PlHashMap::default(),
             is_sumwise_complete: false,
+            is_sumwise_partitionable: false,
         }
     };
 

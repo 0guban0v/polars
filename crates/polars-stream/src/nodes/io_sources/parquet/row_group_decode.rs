@@ -424,6 +424,18 @@ impl Drop for Issue28304DecodeTrace {
 }
 
 /// Turns row group data into DataFrames.
+#[derive(Clone, Copy)]
+pub(super) enum Issue28402CapabilityMode {
+    Selected,
+    Materialized,
+}
+
+pub(super) struct Issue28402CapabilityPlan {
+    pub(super) supported: Vec<usize>,
+    pub(super) residual: Vec<usize>,
+    pub(super) mode: Issue28402CapabilityMode,
+}
+
 pub(super) struct RowGroupDecoder {
     pub(super) num_pipelines: usize,
     pub(super) projected_arrow_fields: Arc<[ArrowFieldProjection]>,
@@ -437,6 +449,7 @@ pub(super) struct RowGroupDecoder {
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     pub(super) target_values_per_thread: usize,
     pub(super) issue_28304_adaptive_state: Arc<Issue28304AdaptiveState>,
+    pub(super) issue_28402_capability_plan: Option<Issue28402CapabilityPlan>,
 }
 
 impl RowGroupDecoder {
@@ -763,12 +776,21 @@ fn decode_column_in_filter(
     projection_height: usize,
     input_selection: Option<Bitmap>,
 ) -> PolarsResult<(Column, Bitmap)> {
+    if std::env::var("POLARS_ISSUE_28402_DECODE_TRACE").as_deref() == Ok("1") {
+        eprintln!(
+            "POLARS_ISSUE_28402_DECODE column={} role=predicate selected={}",
+            arrow_field.name,
+            input_selection.is_some(),
+        );
+    }
     let mut filter = None;
     let mut selected_predicate = None;
     let mut constant = None;
     if use_column_predicates {
-        if let Some((column_predicate, specialized)) =
-            column_predicates.predicates.get(&arrow_field.name)
+        if let Some((column_predicate, specialized)) = column_predicates
+            .predicates
+            .get(&arrow_field.name)
+            .or_else(|| column_predicates.residual_predicates.get(&arrow_field.name))
         {
             constant = specialized.as_ref().and_then(|s| match s {
                 SpecializedColumnPredicate::Equal(sc) if !sc.is_null() => Some(sc),
@@ -1107,10 +1129,323 @@ impl RowGroupDecoder {
         Ok(unsafe { DataFrame::new_unchecked(expected_num_rows, live_columns) })
     }
 
+    async fn row_group_data_to_df_prefiltered_capability_materialized(
+        &self,
+        row_group_data: RowGroupData,
+        supported: Vec<usize>,
+        residual: Vec<usize>,
+    ) -> PolarsResult<DataFrame> {
+        debug_assert!(row_group_data.slice.is_none());
+        debug_assert!(self.row_index.is_none());
+
+        let row_group_data = Arc::new(row_group_data);
+        let projection_height = row_group_data.row_group_metadata.num_rows();
+        let scan_predicate = self.predicate.as_ref().unwrap();
+
+        let cols_per_thread = supported.len().div_ceil(self.num_pipelines).max(1);
+        let task_handles = {
+            let supported = supported.clone();
+            let projected_arrow_fields = self.projected_arrow_fields.clone();
+            let row_group_data = row_group_data.clone();
+            let column_predicates = scan_predicate.column_predicates.clone();
+
+            parallelize_first_to_local(
+                TaskPriority::Low,
+                (0..supported.len())
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let supported = supported.clone();
+                        let projected_arrow_fields = projected_arrow_fields.clone();
+                        let row_group_data = row_group_data.clone();
+                        let column_predicates = column_predicates.clone();
+
+                        async move {
+                            (offset..offset.saturating_add(cols_per_thread).min(supported.len()))
+                                .map(|i| {
+                                    let field_index = supported[i];
+                                    let projection = &projected_arrow_fields[field_index];
+                                    let mut trace = Issue28304DecodeTrace::new(
+                                        "capability_supported",
+                                        projection.arrow_field().name.clone(),
+                                        projection_height,
+                                        None,
+                                    );
+                                    let (column, mask) = decode_column_in_filter(
+                                        projection.arrow_field(),
+                                        true,
+                                        column_predicates.as_ref(),
+                                        row_group_data.as_ref(),
+                                        projection_height,
+                                        None,
+                                    )?;
+                                    let column = projection.apply_transform(column)?;
+                                    if let Some(trace) = trace.as_mut() {
+                                        trace.finish(column.len(), Some(mask.set_bits()));
+                                    }
+                                    Ok((field_index, column, mask))
+                                })
+                                .collect::<PolarsResult<UnitVec<_>>>()
+                        }
+                    }),
+            )
+        };
+
+        let mut supported_columns = Vec::with_capacity(supported.len());
+        let mut supported_masks = Vec::with_capacity(supported.len());
+        for task in task_handles {
+            for (field_index, column, mask) in task.await? {
+                supported_columns.push((field_index, column));
+                supported_masks.push(mask);
+            }
+        }
+
+        let mut prefix_mask = MutableBitmap::new();
+        prefix_mask.extend_from_bitmap(supported_masks.first().unwrap());
+        for mask in &supported_masks[1..] {
+            <&mut MutableBitmap as std::ops::BitAndAssign<&Bitmap>>::bitand_assign(
+                &mut &mut prefix_mask,
+                mask,
+            );
+        }
+        let prefix_mask = prefix_mask.freeze();
+        let prefix_ca = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, prefix_mask.clone());
+        let prefix_rows = prefix_mask.set_bits();
+
+        let mut live_columns = Vec::with_capacity(supported.len() + residual.len());
+        for ((field_index, column), mask) in supported_columns.into_iter().zip(supported_masks) {
+            let column_mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask);
+            let compact_mask = prefix_ca.filter(&column_mask)?;
+            live_columns.push((field_index, column.filter(&compact_mask)?));
+        }
+
+        let cols_per_thread = residual.len().div_ceil(self.num_pipelines).max(1);
+        let task_handles = {
+            let residual = residual.clone();
+            let projected_arrow_fields = self.projected_arrow_fields.clone();
+            let row_group_data = row_group_data.clone();
+            let prefix_ca = prefix_ca.clone();
+            let prefix_mask = prefix_mask.clone();
+
+            parallelize_first_to_local(
+                TaskPriority::Low,
+                (0..residual.len())
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let residual = residual.clone();
+                        let projected_arrow_fields = projected_arrow_fields.clone();
+                        let row_group_data = row_group_data.clone();
+                        let prefix_ca = prefix_ca.clone();
+                        let prefix_mask = prefix_mask.clone();
+
+                        async move {
+                            (offset..offset.saturating_add(cols_per_thread).min(residual.len()))
+                                .map(|i| {
+                                    let field_index = residual[i];
+                                    let projection = &projected_arrow_fields[field_index];
+                                    let mut trace = Issue28304DecodeTrace::new(
+                                        "capability_residual_decode",
+                                        projection.arrow_field().name.clone(),
+                                        projection_height,
+                                        Some(prefix_rows),
+                                    );
+                                    let column = decode_column_prefiltered(
+                                        projection.arrow_field(),
+                                        row_group_data.as_ref(),
+                                        &prefix_ca,
+                                        &prefix_mask,
+                                        prefix_rows,
+                                    )?;
+                                    let column = projection.apply_transform(column)?;
+                                    if let Some(trace) = trace.as_mut() {
+                                        trace.finish(column.len(), None);
+                                    }
+                                    Ok((field_index, column))
+                                })
+                                .collect::<PolarsResult<UnitVec<_>>>()
+                        }
+                    }),
+            )
+        };
+
+        let mut residual_columns = Vec::with_capacity(residual.len());
+        for task in task_handles {
+            residual_columns.extend(task.await?);
+        }
+        residual_columns.sort_unstable_by_key(|(field_index, _)| *field_index);
+        let residual_df = unsafe {
+            DataFrame::new_unchecked(
+                prefix_rows,
+                residual_columns
+                    .iter()
+                    .map(|(_, column)| column.clone())
+                    .collect(),
+            )
+        };
+
+        let mut residual_mask: Option<BooleanChunked> = None;
+        for &field_index in &residual {
+            let name = self.projected_arrow_fields[field_index].output_name();
+            let (predicate, _) = scan_predicate
+                .column_predicates
+                .residual_predicates
+                .get(name)
+                .unwrap();
+            let mut trace = Issue28304DecodeTrace::new(
+                "capability_residual_eval",
+                name.clone(),
+                prefix_rows,
+                Some(prefix_rows),
+            );
+            let mask = predicate.evaluate_io(&residual_df)?;
+            let mask = mask.bool()?.clone();
+            if let Some(trace) = trace.as_mut() {
+                trace.finish(mask.len(), Some(mask.sum().unwrap_or(0) as usize));
+            }
+            residual_mask = Some(match residual_mask {
+                Some(current) => current & mask,
+                None => mask,
+            });
+        }
+        let mut residual_mask = residual_mask.unwrap();
+        residual_mask.rechunk_mut();
+        let residual_array = residual_mask.downcast_as_array();
+        let residual_bitmap = match residual_array.validity() {
+            None => residual_array.values().clone(),
+            Some(validity) => residual_array.values() & validity,
+        };
+
+        live_columns.extend(residual_columns);
+        live_columns.sort_unstable_by_key(|(field_index, _)| *field_index);
+        let live_field_indices = live_columns
+            .iter()
+            .map(|(field_index, _)| *field_index)
+            .collect::<Vec<_>>();
+        let live_columns = filter_cols(
+            live_columns.into_iter().map(|(_, column)| column).collect(),
+            &residual_mask,
+            self.target_values_per_thread,
+        )
+        .await?;
+        let mut live_columns = live_field_indices
+            .into_iter()
+            .zip(live_columns)
+            .collect::<Vec<_>>();
+
+        let mut residual_values = residual_bitmap.iter();
+        let mut final_mask = MutableBitmap::with_capacity(projection_height);
+        for selected in prefix_mask.iter() {
+            final_mask.push(if selected {
+                residual_values.next().unwrap()
+            } else {
+                false
+            });
+        }
+        assert!(residual_values.next().is_none());
+        let final_mask = final_mask.freeze();
+        let expected_num_rows = final_mask.set_bits();
+
+        if self.non_predicate_field_indices.is_empty() {
+            live_columns.sort_unstable_by_key(|(field_index, _)| *field_index);
+            return Ok(unsafe {
+                DataFrame::new_unchecked(
+                    expected_num_rows,
+                    live_columns.into_iter().map(|(_, column)| column).collect(),
+                )
+            });
+        }
+
+        let final_ca = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, final_mask.clone());
+        let cols_per_thread = self
+            .non_predicate_field_indices
+            .len()
+            .div_ceil(self.num_pipelines)
+            .max(1);
+        let task_handles = {
+            let non_predicate_field_indices = self.non_predicate_field_indices.clone();
+            let projected_arrow_fields = self.projected_arrow_fields.clone();
+            let row_group_data = row_group_data.clone();
+
+            parallelize_first_to_local(
+                TaskPriority::Low,
+                (0..non_predicate_field_indices.len())
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let non_predicate_field_indices = non_predicate_field_indices.clone();
+                        let projected_arrow_fields = projected_arrow_fields.clone();
+                        let row_group_data = row_group_data.clone();
+                        let final_ca = final_ca.clone();
+                        let final_mask = final_mask.clone();
+
+                        async move {
+                            (offset
+                                ..offset
+                                    .saturating_add(cols_per_thread)
+                                    .min(non_predicate_field_indices.len()))
+                                .map(|i| {
+                                    let projection =
+                                        &projected_arrow_fields[non_predicate_field_indices[i]];
+                                    let mut trace = Issue28304DecodeTrace::new(
+                                        "capability_non_predicate",
+                                        projection.arrow_field().name.clone(),
+                                        projection_height,
+                                        Some(expected_num_rows),
+                                    );
+                                    let column = decode_column_prefiltered(
+                                        projection.arrow_field(),
+                                        row_group_data.as_ref(),
+                                        &final_ca,
+                                        &final_mask,
+                                        expected_num_rows,
+                                    )?;
+                                    let column = projection.apply_transform(column)?;
+                                    if let Some(trace) = trace.as_mut() {
+                                        trace.finish(column.len(), None);
+                                    }
+                                    Ok(column)
+                                })
+                                .collect::<PolarsResult<UnitVec<_>>>()
+                        }
+                    }),
+            )
+        };
+
+        live_columns.sort_unstable_by_key(|(field_index, _)| *field_index);
+        let mut output = live_columns
+            .into_iter()
+            .map(|(_, column)| column)
+            .collect::<Vec<_>>();
+        for task in task_handles {
+            output.extend(task.await?);
+        }
+        Ok(unsafe { DataFrame::new_unchecked(expected_num_rows, output) })
+    }
+
     async fn row_group_data_to_df_prefiltered(
         &self,
         row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
+        if row_group_data.slice.is_none()
+            && let Some(plan) = self.issue_28402_capability_plan.as_ref()
+        {
+            return match plan.mode {
+                Issue28402CapabilityMode::Selected => {
+                    self.row_group_data_to_df_prefiltered_staged(
+                        row_group_data,
+                        vec![plan.supported.clone(), plan.residual.clone()],
+                    )
+                    .await
+                },
+                Issue28402CapabilityMode::Materialized => {
+                    self.row_group_data_to_df_prefiltered_capability_materialized(
+                        row_group_data,
+                        plan.supported.clone(),
+                        plan.residual.clone(),
+                    )
+                    .await
+                },
+            };
+        }
+
         if let Some(level) = Issue28304RollingLevel::from_env() {
             let decision = self.issue_28304_adaptive_state.choose_rolling(
                 &self.predicate_field_indices,
@@ -1477,6 +1812,12 @@ fn decode_column_prefiltered(
     mask_bitmap: &Bitmap,
     expected_num_rows: usize,
 ) -> PolarsResult<Column> {
+    if std::env::var("POLARS_ISSUE_28402_DECODE_TRACE").as_deref() == Ok("1") {
+        eprintln!(
+            "POLARS_ISSUE_28402_DECODE column={} role=payload selected=true",
+            arrow_field.name,
+        );
+    }
     let Some(iter) = row_group_data
         .row_group_metadata
         .columns_under_root_iter(&arrow_field.name)

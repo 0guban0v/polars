@@ -3261,6 +3261,139 @@ def test_selected_predicate_dense_and_empty_input_28304(
     assert_frame_equal(actual, expected)
 
 
+@pytest.mark.parametrize("capability_mode", ["selected", "materialized"])
+def test_mixed_predicate_capability_staging_28402(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    capability_mode: str,
+) -> None:
+    rows = 10_000
+    row_group_size = 1_000
+    df = pl.DataFrame(
+        {
+            "c1": [f"s{i % 7}" for i in range(rows)],
+            "c2": [f"v{i % 5}" for i in range(rows)],
+            "c_f64": [(i % 101) / 10 for i in range(rows)],
+            "payload": range(rows),
+        }
+    )
+    path = tmp_path / "mixed-predicate-capability.parquet"
+    df.write_parquet(path, row_group_size=row_group_size)
+
+    predicate = (
+        pl.col("c1").is_in(["s2", "s5"])
+        & (pl.col("c2") == "v1")
+        & pl.col("c_f64").is_between(2.0, 8.0)
+    )
+    query = (
+        pl.scan_parquet(path, parallel="prefiltered")
+        .filter(predicate)
+        .select("c1", "c_f64", "payload")
+    )
+    expected = query.collect(engine="streaming")
+    capfd.readouterr()
+
+    plmonkeypatch.setenv(
+        "POLARS_ISSUE_28402_CAPABILITY_STAGING",
+        capability_mode,
+    )
+    plmonkeypatch.setenv("POLARS_ISSUE_28402_DECODE_TRACE", "1")
+    actual = query.collect(engine="streaming")
+    trace = capfd.readouterr().err
+
+    assert_frame_equal(actual, expected)
+    row_groups = rows // row_group_size
+    events = [
+        line
+        for line in trace.splitlines()
+        if line.startswith("POLARS_ISSUE_28402_DECODE ")
+    ]
+    for column_name in ("c1", "c2", "c_f64", "payload"):
+        assert sum(f"column={column_name} " in event for event in events) == row_groups
+    expected_role = "predicate" if capability_mode == "selected" else "payload"
+    assert (
+        sum(
+            f"column=c_f64 role={expected_role} selected=true" in event
+            for event in events
+        )
+        == row_groups
+    )
+
+
+@pytest.mark.parametrize(
+    ("prefix_values", "expected_height"),
+    [
+        (["keep"] * 12, 8),
+        (["drop"] * 12, 0),
+        (["keep", "drop"] * 6, 4),
+    ],
+)
+def test_mixed_predicate_capability_mask_edges_28402(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    prefix_values: list[str],
+    expected_height: int,
+) -> None:
+    path = tmp_path / "mixed-predicate-capability-mask-edges.parquet"
+    pl.DataFrame(
+        {
+            "prefix": prefix_values,
+            "residual": [None, 1.0, 2.0, 3.0, 4.0, 5.0] * 2,
+            "payload": range(12),
+        }
+    ).write_parquet(path, row_group_size=6)
+
+    query = (
+        pl.scan_parquet(path, parallel="prefiltered")
+        .filter(pl.col("prefix") == "keep")
+        .filter(pl.col("residual").is_between(2.0, 5.0))
+        .select("prefix", "residual", "payload")
+    )
+    expected = query.collect(engine="streaming")
+
+    plmonkeypatch.setenv(
+        "POLARS_ISSUE_28402_CAPABILITY_STAGING",
+        "materialized",
+    )
+    actual = query.collect(engine="streaming")
+
+    assert_frame_equal(actual, expected)
+    assert actual.height == expected_height
+
+
+def test_mixed_predicate_capability_falls_back_for_multi_column_expression_28402(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "mixed-predicate-capability-multi-column.parquet"
+    pl.DataFrame(
+        {
+            "prefix": ["keep", "drop"] * 10,
+            "left": [float(i) for i in range(20)],
+            "right": [float(i % 3) for i in range(20)],
+        }
+    ).write_parquet(path, row_group_size=5)
+
+    query = pl.scan_parquet(path, parallel="prefiltered").filter(
+        (pl.col("prefix") == "keep") & (pl.col("left") > pl.col("right"))
+    )
+    expected = query.collect(engine="streaming")
+    capfd.readouterr()
+
+    plmonkeypatch.setenv(
+        "POLARS_ISSUE_28402_CAPABILITY_STAGING",
+        "materialized",
+    )
+    plmonkeypatch.setenv("POLARS_ISSUE_28402_DECODE_TRACE", "1")
+    actual = query.collect(engine="streaming")
+    trace = capfd.readouterr().err
+
+    assert_frame_equal(actual, expected)
+    assert "selected=true" not in trace
+
+
 @pytest.mark.parametrize("parallel", ["columns", "row_groups"])
 def test_filtering_on_other_parallel_modes_with_statistics(
     parallel: ParallelStrategy,
