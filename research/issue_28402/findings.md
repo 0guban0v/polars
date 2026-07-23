@@ -2,7 +2,7 @@
 
 Date: 2026-07-23
 Branch: `research/28402-capability-staging`
-Base: `3b96397da8`
+Starting commit for this phase: `c0dab4ed02`
 
 ## Question
 
@@ -187,7 +187,7 @@ sequential materialization improved roughly 10% while fanout regressed.
 Phase 3 implements two separate research heuristics:
 
 ```text
-Decision 1: metadata file rows >= 500k and one pipeline?
+Decision 1: unsliced, post-statistics candidate rows >= 500k, one pipeline?
     no  -> current global fallback
     yes -> capability path
 
@@ -296,9 +296,47 @@ Final 250k short-String run verifies guard follows fallback and changed wall by
 -0.02%; it does not establish pre-guard String regression. Five-hundred-
 thousand-row weak Float64 case improved 3.2%.
 
-Metadata file rows are static proxy for scheduled scan size. Statistics
-skipping can make effective scan much smaller. Multi-file scans, different
-row-group layouts at same file size, and post-statistics work remain untested.
+Original guard used metadata file rows before statistics pruning. It could
+admit one small retained row group from large file. Revised Auto shares
+effective scheduled-row count from prefetch planning into decoder, applies
+500k guard after statistics mask, and conservatively rejects normalized slice.
+Focused integration test proves 40k file pruned to one 10k row group falls
+back without schedule event.
+
+### Frozen effective-scan and threshold holdout
+
+M4 holdout froze 1M schedule and 500k candidate-row guard before measurement:
+
+```text
+rows:                  4M, four 1M row groups
+speculative values:    0.9M, 1.1M per row group
+seeds:                 38402, 38403
+payload:               eight Float64 or short-String columns
+residual retention:    10%, 90%
+prefix topology:       exact-cardinality random or clustered
+warmups / iterations:  3 / 15
+```
+
+Clustered generator randomizes contiguous block position per row group and
+seed. Initial fixed-center clustered run was discarded and rerun.
+
+All 32 controlled cells passed predeclared targeted schedule-boundary gate.
+Every one of 480 paired Auto/fallback measurements favored Auto. Weakest Auto
+point was -4.2% against fallback. Paired bootstrap of stated ratio-of-medians
+metric gave -3.4% as worst upper bound, below +2% limit. No cell was
+inconclusive or failed. Raw per-plan samples and sanitized combined summary are
+under
+`results/phase3-effective-scan-holdout/`.
+
+Safety did not imply oracle parity. All four 1.1M clustered, 90%-residual
+cells had 9.9–14.4% regret against local fanout. Auto selected materialization
+while fanout won. Residual-retention estimate, payload-cost estimate, or
+available prefix-mask topology may recover opportunity. None is required for
+targeted M4 schedule-boundary result.
+
+These 32 cells are not independent workload samples. Payload variants reuse
+predicate masks, residual-retention variants reuse generated files, and each
+seed reuses one randomized plan-order sequence across its cells.
 
 ## Issue-like confirmation
 
@@ -345,58 +383,45 @@ row-group supply as sole cause.
 - Decode count: pass.
 - Filter task sizing: pass; it closes targeted high-thread gap without
   significant regression against default fanout.
-- Auto wiring: partial. Benchmarks exercise both one-thread arms, but automated
-  suite has no eligible-Auto integration test proving fanout and materialized
-  branches. It tests helper boundaries and ineligible fallback.
-- One-thread performance: promising in measured family, not closed. No observed
-  regression, but threshold-near frozen holdout, mask topology, filter-only
-  residual, encoding, null, and effective-scan controls are missing.
-- Eligibility: provisional. 500k is first safe tested point, not characterized
-  boundary or independently seeded guard.
+- Auto wiring: pass for research scope. Tests prove eligible fanout,
+  materialized, post-statistics fallback, and multi-pipeline fallback.
+- One-thread M4 schedule boundary: pass for frozen holdout. Broader
+  filter-only, encoding, null, eligibility-boundary, and hardware portability
+  controls remain outside this gate.
+- Eligibility mechanism: pass. Guard uses post-statistics candidate rows.
+  Numeric 500k value remains provisional; holdout scans all had 4M candidate
+  rows.
 - Multi-thread performance: unconditional local fanout rejected. Adaptive
   multi-thread schedule was not tested.
 - Native parity: pass for targeted four-row-group dense/wide high-thread case;
   slice is not universal winner when row-group capacity or one-thread payload
   work changes.
-- Reproducibility: partial. Curated matrix artifacts omit raw timing samples,
-  and pre-eligibility Auto behavior differs from current code.
+- Reproducibility: pass for unified holdout rerun. Exact commands, raw timing
+  samples, execution order, benchmark/runtime fingerprints, environment, and
+  corrected clustered data are retained.
 - Simplicity: value-count proxy is useful candidate. Evidence does not yet
   establish sufficient policy.
 
-Outcome is implemented mechanism plus provisional one-thread heuristic. Phase 3
-policy remains open. Do not make production or #28485 dependency claim from
-this branch.
+Outcome is implemented mechanism plus M4-local one-thread schedule candidate.
+Numeric 500k eligibility guard, portable policy, and production policy remain
+open. Do not make production or #28485 dependency claim from this branch.
 
 ## Next validation
 
-Freeze 1M and 500k candidates before collecting new data:
+Run compact same frozen boundary matrix on x86 as next hardware falsification.
+Do not pool M4 and x86 into one threshold fit.
 
-```text
-schedule values: 0.75M, 0.9M, 1.0M, 1.1M, 1.25M, 1.5M
-file rows:       250k, 375k, 500k, 625k, 750k
-```
+An x86 pass is necessary evidence for static threshold portability, not
+sufficient production gate. Next production-candidate matrix must also
+exercise 500k eligibility neighborhood and remaining eligible filter-only,
+encoding, and null controls. If x86 changes schedule-boundary safety, replace
+static threshold with hardware-normalized bytes or decode-cost proxy before
+expanding scope.
 
-Use new seeds and independent processes. Cross only controls capable of
-falsifying proxy:
-
-- random, clustered, and alternating prefix masks at same cardinality;
-- projected and filter-only residual;
-- Int64, Float64, short/long String, null-heavy, and different
-  encoding/compression cases;
-- fixed total rows with different row-group layouts;
-- statistics-pruned files where metadata rows exceed scheduled rows;
-- eligible Auto integration tests for both schedule arms and multi-thread
-  fallback.
-
-Preserve raw per-plan timing samples and exact code revision with curated
-summary.
-
-Treat multi-thread policy as separate three-arm experiment: fallback, local
-fanout, and materialization. Start with conservative static rule using observed
-prefix cardinality, pipeline count, payload width/type, and abstention. Add
-residual-rejection or measured payload-cost signal only if frozen holdout shows
-static rule unsafe or sacrifices enough opportunity. Paired-block prediction is
-later fallback, not current requirement.
+Opportunity optimization is separate. Clustered/high-residual regret supports
+testing residual or payload-cost signal, but only after portability gate and
+only if recovering missed gain is worth policy complexity. Multi-thread,
+paired-block prediction, ML, and CUDA remain deferred.
 
 ## Limits
 
@@ -407,10 +432,13 @@ later fallback, not current requirement.
 - Payload-dtype cases share predicate and residual masks.
 - Timing intervals describe repeated warm-cache scans on one machine, not
   workload-family uncertainty; no multiple-comparison adjustment was applied.
+- New holdout uses paired bootstrap interval for ratio of medians. Earlier
+  reports retain paired absolute-difference intervals.
 - Earlier supply confirmation changed total rows. Phase 3 row-group-size sweep
   held total rows fixed and exposed 2M-threshold failure.
-- Eligibility uses file metadata rows, not post-statistics scheduled rows.
+- Numeric thresholds remain calibrated only on M4 warm-cache runs.
 - Bootstrap treats repeated scan as paired unit; rows are not independent
   samples.
-- Curated Phase 3 matrices omit raw samples required to recompute intervals.
+- Older curated Phase 3 matrices omit raw samples; new holdout retains raw
+  samples and execution order.
 - No production policy or broad speedup claim is established.

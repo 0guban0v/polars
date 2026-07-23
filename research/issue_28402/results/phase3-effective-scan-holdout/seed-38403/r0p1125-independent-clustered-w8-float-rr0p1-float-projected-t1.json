@@ -1,0 +1,723 @@
+{
+  "baseline": "global_fallback",
+  "comparisons": {
+    "capability_auto_1000000": {
+      "change_vs_baseline": -0.3938922230451707,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": -0.034212042,
+        "ci95_low": -0.035251500000000005,
+        "median": -0.034881208999999996
+      },
+      "paired_wall_ratio_change": {
+        "ci95_high": -0.38805507480285417,
+        "ci95_low": -0.39585551036870237,
+        "estimate": -0.3938922230451707
+      }
+    },
+    "capability_fanout": {
+      "change_vs_baseline": -0.39181664010883943,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": -0.034284749999999996,
+        "ci95_low": -0.034971499999999996,
+        "median": -0.03471925000000001
+      },
+      "paired_wall_ratio_change": {
+        "ci95_high": -0.38806752334506034,
+        "ci95_low": -0.39419587613925866,
+        "estimate": -0.39181664010883943
+      }
+    },
+    "capability_fanout_local_1000000": {
+      "change_vs_baseline": -0.3923665221879119,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": -0.034224374999999994,
+        "ci95_low": -0.035281875,
+        "median": -0.034578041999999996
+      },
+      "paired_wall_ratio_change": {
+        "ci95_high": -0.3864850941783876,
+        "ci95_low": -0.39533441116904733,
+        "estimate": -0.3923665221879119
+      }
+    },
+    "capability_materialized": {
+      "change_vs_baseline": -0.36373582395056336,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": -0.031665125,
+        "ci95_low": -0.032628792,
+        "median": -0.032446083
+      },
+      "paired_wall_ratio_change": {
+        "ci95_high": -0.35846900325890985,
+        "ci95_low": -0.3690591445246837,
+        "estimate": -0.36373582395056336
+      }
+    },
+    "capability_selected": {
+      "change_vs_baseline": -0.38724560856020096,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": -0.033814958,
+        "ci95_low": -0.035136792,
+        "median": -0.034177792
+      },
+      "paired_wall_ratio_change": {
+        "ci95_high": -0.3839335014008304,
+        "ci95_low": -0.39202862456446974,
+        "estimate": -0.38724560856020096
+      }
+    },
+    "slice_blocked": {
+      "change_vs_baseline": -0.3821541635216953,
+      "paired_median_wall_difference_seconds": {
+        "ci95_high": -0.033286292,
+        "ci95_low": -0.034371833,
+        "median": -0.03398712599999999
+      },
+      "paired_wall_ratio_change": {
+        "ci95_high": -0.3771662264981863,
+        "ci95_low": -0.3850867900865017,
+        "estimate": -0.3821541635216953
+      }
+    }
+  },
+  "configuration": {
+    "auto_fanout_min_task_values": 1000000,
+    "auto_max_speculative_values": [
+      1000000
+    ],
+    "auto_min_file_rows": 500000,
+    "bootstrap_resamples": 5000,
+    "fanout_min_task_values": [
+      1000000
+    ],
+    "iterations": 15,
+    "mask_topology": "clustered",
+    "payload_dtype": "float",
+    "payload_width": 8,
+    "prefix_retention": 0.1125,
+    "relationship": "independent",
+    "residual_dtype": "float",
+    "residual_projection": "projected",
+    "residual_retention": 0.1,
+    "row_group_size": 1000000,
+    "row_groups": 4,
+    "rows": 4000000,
+    "seed": 38403,
+    "warmups": 3
+  },
+  "environment": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "polars_max_threads": "1",
+    "polars_thread_pool_size": 1,
+    "polars_version": "1.43.0",
+    "python": "3.13.11 (main, Jan 19 2026, 13:46:40) [Clang 17.0.0 (clang-1700.6.3.2)]"
+  },
+  "execution_order": [
+    [
+      "global_fallback",
+      "capability_fanout_local_1000000",
+      "capability_auto_1000000",
+      "slice_blocked",
+      "capability_fanout",
+      "capability_materialized",
+      "capability_selected"
+    ],
+    [
+      "capability_fanout",
+      "capability_materialized",
+      "slice_blocked",
+      "capability_auto_1000000",
+      "global_fallback",
+      "capability_fanout_local_1000000",
+      "capability_selected"
+    ],
+    [
+      "capability_fanout_local_1000000",
+      "capability_fanout",
+      "capability_auto_1000000",
+      "capability_selected",
+      "global_fallback",
+      "capability_materialized",
+      "slice_blocked"
+    ],
+    [
+      "capability_materialized",
+      "capability_auto_1000000",
+      "slice_blocked",
+      "global_fallback",
+      "capability_fanout_local_1000000",
+      "capability_fanout",
+      "capability_selected"
+    ],
+    [
+      "capability_auto_1000000",
+      "capability_fanout",
+      "slice_blocked",
+      "global_fallback",
+      "capability_fanout_local_1000000",
+      "capability_selected",
+      "capability_materialized"
+    ],
+    [
+      "global_fallback",
+      "capability_fanout_local_1000000",
+      "capability_fanout",
+      "capability_auto_1000000",
+      "capability_selected",
+      "capability_materialized",
+      "slice_blocked"
+    ],
+    [
+      "capability_materialized",
+      "capability_fanout_local_1000000",
+      "capability_selected",
+      "capability_fanout",
+      "capability_auto_1000000",
+      "slice_blocked",
+      "global_fallback"
+    ],
+    [
+      "global_fallback",
+      "capability_fanout_local_1000000",
+      "capability_auto_1000000",
+      "capability_fanout",
+      "capability_materialized",
+      "slice_blocked",
+      "capability_selected"
+    ],
+    [
+      "capability_fanout_local_1000000",
+      "capability_auto_1000000",
+      "capability_selected",
+      "slice_blocked",
+      "global_fallback",
+      "capability_fanout",
+      "capability_materialized"
+    ],
+    [
+      "capability_fanout_local_1000000",
+      "capability_materialized",
+      "capability_fanout",
+      "global_fallback",
+      "capability_auto_1000000",
+      "slice_blocked",
+      "capability_selected"
+    ],
+    [
+      "capability_fanout_local_1000000",
+      "capability_selected",
+      "capability_fanout",
+      "slice_blocked",
+      "capability_auto_1000000",
+      "global_fallback",
+      "capability_materialized"
+    ],
+    [
+      "slice_blocked",
+      "capability_auto_1000000",
+      "global_fallback",
+      "capability_fanout",
+      "capability_materialized",
+      "capability_fanout_local_1000000",
+      "capability_selected"
+    ],
+    [
+      "capability_fanout_local_1000000",
+      "capability_fanout",
+      "slice_blocked",
+      "capability_selected",
+      "capability_materialized",
+      "global_fallback",
+      "capability_auto_1000000"
+    ],
+    [
+      "capability_materialized",
+      "capability_fanout",
+      "global_fallback",
+      "slice_blocked",
+      "capability_selected",
+      "capability_auto_1000000",
+      "capability_fanout_local_1000000"
+    ],
+    [
+      "global_fallback",
+      "capability_fanout",
+      "capability_materialized",
+      "capability_auto_1000000",
+      "slice_blocked",
+      "capability_selected",
+      "capability_fanout_local_1000000"
+    ]
+  ],
+  "expected_result": [
+    226407977.0,
+    226365773.0,
+    226804107.0,
+    226723810.0,
+    227244535.0,
+    226135162.0,
+    225518381.0,
+    226159665.0,
+    135811.0
+  ],
+  "observed_selectivity": {
+    "final": 0.011322,
+    "first": 0.33541,
+    "prefix": 0.1125,
+    "residual": 0.10016975,
+    "second": 0.33541
+  },
+  "pairwise_comparisons": {
+    "capability_auto_1000000": {
+      "capability_fanout": {
+        "change_vs_reference": -0.0034127585087212475,
+        "paired_median_wall_difference_seconds": {
+          "ci95_high": 0.00020601079999998733,
+          "ci95_low": -0.00034333200000000175,
+          "median": -0.00014324899999999807
+        },
+        "paired_wall_ratio_change": {
+          "ci95_high": 0.003789288967073423,
+          "ci95_low": -0.01126548984914666,
+          "estimate": -0.0034127585087212475
+        }
+      },
+      "capability_materialized": {
+        "change_vs_reference": -0.04739603490149069,
+        "paired_median_wall_difference_seconds": {
+          "ci95_high": -0.0022502510000000017,
+          "ci95_low": -0.002827582000000002,
+          "median": -0.002520541000000001
+        },
+        "paired_wall_ratio_change": {
+          "ci95_high": -0.03589136384144509,
+          "ci95_low": -0.05108011837117432,
+          "estimate": -0.04739603490149069
+        }
+      }
+    },
+    "capability_fanout_local_1000000": {
+      "capability_fanout": {
+        "change_vs_reference": -0.0009041386452448563,
+        "paired_median_wall_difference_seconds": {
+          "ci95_high": 0.0003018340000000008,
+          "ci95_low": -0.0004442919999999989,
+          "median": -0.0001608339999999986
+        },
+        "paired_wall_ratio_change": {
+          "ci95_high": 0.008862998982420045,
+          "ci95_low": -0.008956910913548777,
+          "estimate": -0.0009041386452448563
+        }
+      },
+      "slice_blocked": {
+        "change_vs_reference": -0.016528975455150197,
+        "paired_median_wall_difference_seconds": {
+          "ci95_high": -0.0006151240000000016,
+          "ci95_low": -0.0011046659999999972,
+          "median": -0.0009100419999999998
+        },
+        "paired_wall_ratio_change": {
+          "ci95_high": -0.009741532553035892,
+          "ci95_low": -0.02326376618859463,
+          "estimate": -0.016528975455150197
+        }
+      }
+    }
+  },
+  "plans": {
+    "capability_auto_1000000": "SELECT [col(\"payload_0\").sum(), col(\"payload_1\").sum(), col(\"payload_2\").sum(), col(\"payload_3\").sum(), col(\"payload_4\").sum(), col(\"payload_5\").sum(), col(\"payload_6\").sum(), col(\"payload_7\").sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/private/tmp/phase3-effective-holdout/seed-38403/r0p1125-independent-clustered-w8-float.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "capability_fanout": "SELECT [col(\"payload_0\").sum(), col(\"payload_1\").sum(), col(\"payload_2\").sum(), col(\"payload_3\").sum(), col(\"payload_4\").sum(), col(\"payload_5\").sum(), col(\"payload_6\").sum(), col(\"payload_7\").sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/private/tmp/phase3-effective-holdout/seed-38403/r0p1125-independent-clustered-w8-float.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "capability_fanout_local_1000000": "SELECT [col(\"payload_0\").sum(), col(\"payload_1\").sum(), col(\"payload_2\").sum(), col(\"payload_3\").sum(), col(\"payload_4\").sum(), col(\"payload_5\").sum(), col(\"payload_6\").sum(), col(\"payload_7\").sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/private/tmp/phase3-effective-holdout/seed-38403/r0p1125-independent-clustered-w8-float.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "capability_materialized": "SELECT [col(\"payload_0\").sum(), col(\"payload_1\").sum(), col(\"payload_2\").sum(), col(\"payload_3\").sum(), col(\"payload_4\").sum(), col(\"payload_5\").sum(), col(\"payload_6\").sum(), col(\"payload_7\").sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/private/tmp/phase3-effective-holdout/seed-38403/r0p1125-independent-clustered-w8-float.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "capability_selected": "SELECT [col(\"payload_0\").sum(), col(\"payload_1\").sum(), col(\"payload_2\").sum(), col(\"payload_3\").sum(), col(\"payload_4\").sum(), col(\"payload_5\").sum(), col(\"payload_6\").sum(), col(\"payload_7\").sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/private/tmp/phase3-effective-holdout/seed-38403/r0p1125-independent-clustered-w8-float.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "global_fallback": "SELECT [col(\"payload_0\").sum(), col(\"payload_1\").sum(), col(\"payload_2\").sum(), col(\"payload_3\").sum(), col(\"payload_4\").sum(), col(\"payload_5\").sum(), col(\"payload_6\").sum(), col(\"payload_7\").sum(), col(\"c_f64\").sum()]\n  simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n    Parquet SCAN [/private/tmp/phase3-effective-holdout/seed-38403/r0p1125-independent-clustered-w8-float.parquet]\n    PROJECT 11/12 COLUMNS\n    SELECTION: ((col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")) & col(\"c_f64\").is_between([1.0, 5.0])\n    ESTIMATED ROWS: 4000000",
+    "slice_blocked": "SELECT [col(\"payload_0\").sum(), col(\"payload_1\").sum(), col(\"payload_2\").sum(), col(\"payload_3\").sum(), col(\"payload_4\").sum(), col(\"payload_5\").sum(), col(\"payload_6\").sum(), col(\"payload_7\").sum(), col(\"c_f64\").sum()]\n  FILTER col(\"c_f64\").is_between([1.0, 5.0])\n  FROM\n    simple \u03c0 9/9 [\"payload_0\", \"payload_1\", ... 7 other columns]\n      SLICE[offset: 0, len: 4294967295]\n        Parquet SCAN [/private/tmp/phase3-effective-holdout/seed-38403/r0p1125-independent-clustered-w8-float.parquet]\n        PROJECT 11/12 COLUMNS\n        SELECTION: (col(\"c1\") == \"C\") & (col(\"c2\") == \"W\")\n        ESTIMATED ROWS: 4000000"
+  },
+  "provenance": {
+    "benchmark_sha256": "a070f72dcdbf7e02080bd1a5460590c676fe4adf5d615edec66f8512fee5b462",
+    "runtime_binary_sha256": "1d62e12a1a83d6cfcac94cb4da2a6d916820e358442d4a3131fcdde32bc51d80"
+  },
+  "queries": {
+    "capability_auto_1000000": {
+      "cpu_seconds": {
+        "max": 0.056965,
+        "median": 0.055477,
+        "min": 0.054245,
+        "p25": 0.055392,
+        "p75": 0.055852,
+        "p95": 0.056483
+      },
+      "wall_seconds": {
+        "max": 0.055504292,
+        "median": 0.054011375,
+        "min": 0.052923584,
+        "p25": 0.053904,
+        "p75": 0.054348833,
+        "p95": 0.054984833
+      }
+    },
+    "capability_fanout": {
+      "cpu_seconds": {
+        "max": 0.056793,
+        "median": 0.055659,
+        "min": 0.054115,
+        "p25": 0.055414,
+        "p75": 0.055843,
+        "p95": 0.056462
+      },
+      "wall_seconds": {
+        "max": 0.055406583,
+        "median": 0.054196334,
+        "min": 0.052803625,
+        "p25": 0.053979667,
+        "p75": 0.05453975,
+        "p95": 0.054992958
+      }
+    },
+    "capability_fanout_local_1000000": {
+      "cpu_seconds": {
+        "max": 0.056972,
+        "median": 0.055604,
+        "min": 0.054455,
+        "p25": 0.055317,
+        "p75": 0.056038,
+        "p95": 0.056338
+      },
+      "wall_seconds": {
+        "max": 0.05551175,
+        "median": 0.054147333,
+        "min": 0.05299775,
+        "p25": 0.053925916,
+        "p75": 0.05465675,
+        "p95": 0.054744834
+      }
+    },
+    "capability_materialized": {
+      "cpu_seconds": {
+        "max": 0.059004,
+        "median": 0.058141,
+        "min": 0.056673,
+        "p25": 0.057892,
+        "p75": 0.058472,
+        "p95": 0.058772
+      },
+      "wall_seconds": {
+        "max": 0.057744125,
+        "median": 0.056698667,
+        "min": 0.055250709,
+        "p25": 0.056411917,
+        "p75": 0.056897541,
+        "p95": 0.057498875
+      }
+    },
+    "capability_selected": {
+      "cpu_seconds": {
+        "max": 0.05663,
+        "median": 0.055878,
+        "min": 0.054667,
+        "p25": 0.055519,
+        "p75": 0.056196,
+        "p95": 0.056423
+      },
+      "wall_seconds": {
+        "max": 0.055394416,
+        "median": 0.054603667,
+        "min": 0.053330209,
+        "p25": 0.054217375,
+        "p75": 0.054799834,
+        "p95": 0.055135208
+      }
+    },
+    "global_fallback": {
+      "cpu_seconds": {
+        "max": 0.091828,
+        "median": 0.090607,
+        "min": 0.088367,
+        "p25": 0.09042,
+        "p75": 0.090763,
+        "p95": 0.091758
+      },
+      "wall_seconds": {
+        "max": 0.093750625,
+        "median": 0.089111833,
+        "min": 0.0868765,
+        "p25": 0.088872209,
+        "p75": 0.089277708,
+        "p95": 0.090236333
+      }
+    },
+    "slice_blocked": {
+      "cpu_seconds": {
+        "max": 0.057562,
+        "median": 0.056617,
+        "min": 0.055542,
+        "p25": 0.056314,
+        "p75": 0.056943,
+        "p95": 0.057362
+      },
+      "wall_seconds": {
+        "max": 0.056061791,
+        "median": 0.055057375,
+        "min": 0.054050125,
+        "p25": 0.054856708,
+        "p75": 0.055401791,
+        "p95": 0.055719
+      }
+    }
+  },
+  "samples": {
+    "capability_auto_1000000": {
+      "cpu_seconds": [
+        0.055458,
+        0.055814,
+        0.055477,
+        0.055353,
+        0.054245,
+        0.054561,
+        0.055206,
+        0.055392,
+        0.055852,
+        0.056474,
+        0.056483,
+        0.056965,
+        0.056214,
+        0.055425,
+        0.055525
+      ],
+      "wall_seconds": [
+        0.053991,
+        0.054348833,
+        0.054069959,
+        0.053904,
+        0.052923584,
+        0.053042583,
+        0.053692667,
+        0.053925333,
+        0.0543225,
+        0.054984833,
+        0.054901666,
+        0.055504292,
+        0.05472575,
+        0.053901625,
+        0.054011375
+      ]
+    },
+    "capability_fanout": {
+      "cpu_seconds": [
+        0.055659,
+        0.055517,
+        0.055764,
+        0.054666,
+        0.054376,
+        0.054115,
+        0.056002,
+        0.055843,
+        0.05568,
+        0.056793,
+        0.055414,
+        0.056249,
+        0.056462,
+        0.055568,
+        0.055343
+      ],
+      "wall_seconds": [
+        0.054330167,
+        0.054143667,
+        0.054413291,
+        0.053172667,
+        0.053066833,
+        0.052803625,
+        0.05453975,
+        0.054690625,
+        0.054196334,
+        0.055406583,
+        0.053974083,
+        0.054868417,
+        0.054992958,
+        0.054176583,
+        0.053979667
+      ]
+    },
+    "capability_fanout_local_1000000": {
+      "cpu_seconds": [
+        0.055556,
+        0.055506,
+        0.056053,
+        0.054455,
+        0.054461,
+        0.055224,
+        0.056038,
+        0.055604,
+        0.055205,
+        0.055317,
+        0.056972,
+        0.055852,
+        0.05614,
+        0.056338,
+        0.055617
+      ],
+      "wall_seconds": [
+        0.054096084,
+        0.053982833,
+        0.054715125,
+        0.05299775,
+        0.053067958,
+        0.053804375,
+        0.054744834,
+        0.054147333,
+        0.053752042,
+        0.053925916,
+        0.05551175,
+        0.054316625,
+        0.05465675,
+        0.054741792,
+        0.054269625
+      ]
+    },
+    "capability_materialized": {
+      "cpu_seconds": [
+        0.058141,
+        0.058772,
+        0.058472,
+        0.057892,
+        0.056673,
+        0.056697,
+        0.058736,
+        0.058138,
+        0.057492,
+        0.058703,
+        0.059004,
+        0.057944,
+        0.05817,
+        0.058162,
+        0.057379
+      ],
+      "wall_seconds": [
+        0.056766208,
+        0.057744125,
+        0.056897541,
+        0.056424541,
+        0.055250709,
+        0.055292834,
+        0.057399416,
+        0.056800416,
+        0.056022084,
+        0.057274417,
+        0.057498875,
+        0.056411917,
+        0.056698667,
+        0.05666575,
+        0.055922209
+      ]
+    },
+    "capability_selected": {
+      "cpu_seconds": [
+        0.05663,
+        0.056073,
+        0.056196,
+        0.054882,
+        0.054667,
+        0.054693,
+        0.055767,
+        0.055878,
+        0.05626,
+        0.056058,
+        0.056333,
+        0.056423,
+        0.055519,
+        0.05571,
+        0.055347
+      ],
+      "wall_seconds": [
+        0.055135208,
+        0.054674917,
+        0.054742625,
+        0.053407167,
+        0.053364625,
+        0.053330209,
+        0.054266917,
+        0.054440458,
+        0.05509925,
+        0.054603667,
+        0.054844,
+        0.054799834,
+        0.054140916,
+        0.054217375,
+        0.055394416
+      ]
+    },
+    "global_fallback": {
+      "cpu_seconds": [
+        0.090607,
+        0.090042,
+        0.090543,
+        0.088817,
+        0.088399,
+        0.088367,
+        0.090726,
+        0.090763,
+        0.09069,
+        0.091828,
+        0.091758,
+        0.091696,
+        0.090824,
+        0.090574,
+        0.09042
+      ],
+      "wall_seconds": [
+        0.088872209,
+        0.088560875,
+        0.088920417,
+        0.087222125,
+        0.0868765,
+        0.086957959,
+        0.089259,
+        0.089429208,
+        0.089183041,
+        0.090236333,
+        0.090060208,
+        0.093750625,
+        0.089277708,
+        0.089111833,
+        0.088951167
+      ]
+    },
+    "slice_blocked": {
+      "cpu_seconds": [
+        0.056422,
+        0.055542,
+        0.057193,
+        0.056459,
+        0.055724,
+        0.055802,
+        0.056943,
+        0.056617,
+        0.056314,
+        0.057562,
+        0.056974,
+        0.057362,
+        0.056285,
+        0.056695,
+        0.056724
+      ],
+      "wall_seconds": [
+        0.054885083,
+        0.054050125,
+        0.055634125,
+        0.054898042,
+        0.054472666,
+        0.054289208,
+        0.055359958,
+        0.055057375,
+        0.054856708,
+        0.056061791,
+        0.055401791,
+        0.055719,
+        0.05468,
+        0.055520708,
+        0.055209875
+      ]
+    }
+  }
+}

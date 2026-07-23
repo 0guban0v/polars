@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import json
 import os
 import platform
@@ -53,6 +54,14 @@ def summarize(values: Sequence[float]) -> dict[str, float]:
     }
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        while chunk := file.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def bootstrap_median_difference(
     candidate: Sequence[float],
     baseline: Sequence[float],
@@ -85,6 +94,41 @@ def bootstrap_median_difference(
     }
 
 
+def bootstrap_median_ratio_change(
+    candidate: Sequence[float],
+    baseline: Sequence[float],
+    *,
+    resamples: int,
+    seed: int,
+) -> dict[str, float]:
+    candidate_array = np.asarray(candidate)
+    baseline_array = np.asarray(baseline)
+    if candidate_array.shape != baseline_array.shape:
+        msg = "candidate and baseline sample counts differ"
+        raise ValueError(msg)
+
+    estimate = float(np.median(candidate_array) / np.median(baseline_array) - 1)
+    if np.array_equal(candidate_array, baseline_array):
+        return {"estimate": 0.0, "ci95_low": 0.0, "ci95_high": 0.0}
+
+    generator = np.random.default_rng(seed)
+    indices = generator.integers(
+        0,
+        candidate_array.size,
+        size=(resamples, candidate_array.size),
+    )
+    changes = (
+        np.median(candidate_array[indices], axis=1)
+        / np.median(baseline_array[indices], axis=1)
+        - 1
+    )
+    return {
+        "estimate": estimate,
+        "ci95_low": float(np.quantile(changes, 0.025)),
+        "ci95_high": float(np.quantile(changes, 0.975)),
+    }
+
+
 def generate_data(
     path: Path,
     *,
@@ -92,6 +136,7 @@ def generate_data(
     row_group_size: int,
     prefix_retention: float,
     relationship: str,
+    mask_topology: str,
     payload_width: int,
     payload_dtype: str,
     seed: int,
@@ -101,22 +146,64 @@ def generate_data(
         raise ValueError(msg)
 
     generator = np.random.default_rng(seed)
-    first = generator.random(rows)
-    second = generator.random(rows)
-    if relationship == "independent":
-        marginal = prefix_retention**0.5
-        first_mask = first < marginal
-        second_mask = second < marginal
-    elif relationship == "nested":
-        first_mask = first < prefix_retention
-        second_mask = first < min(0.99, max(prefix_retention, prefix_retention**0.5))
-    elif relationship == "negative":
-        marginal = (1.0 + prefix_retention) / 2.0
-        first_mask = first < marginal
-        second_mask = first >= 1.0 - marginal
+    if mask_topology == "bernoulli":
+        first = generator.random(rows)
+        second = generator.random(rows)
+        if relationship == "independent":
+            marginal = prefix_retention**0.5
+            first_mask = first < marginal
+            second_mask = second < marginal
+        elif relationship == "nested":
+            first_mask = first < prefix_retention
+            second_mask = first < min(
+                0.99, max(prefix_retention, prefix_retention**0.5)
+            )
+        elif relationship == "negative":
+            marginal = (1.0 + prefix_retention) / 2.0
+            first_mask = first < marginal
+            second_mask = first >= 1.0 - marginal
+        else:
+            msg = f"unknown relationship: {relationship}"
+            raise ValueError(msg)
     else:
-        msg = f"unknown relationship: {relationship}"
-        raise ValueError(msg)
+        if relationship != "independent":
+            msg = "exact mask topologies require independent relationship"
+            raise ValueError(msg)
+        first_mask = np.zeros(rows, dtype=np.bool_)
+        second_mask = np.zeros(rows, dtype=np.bool_)
+        for start in range(0, rows, row_group_size):
+            stop = min(start + row_group_size, rows)
+            size = stop - start
+            selected_count = round(prefix_retention * size)
+            marginal_count = round(prefix_retention**0.5 * size)
+            extra_count = marginal_count - selected_count
+            if mask_topology == "random":
+                order = generator.permutation(size)
+                selected = order[:selected_count]
+                remaining = order[selected_count:]
+            elif mask_topology == "clustered":
+                cluster_start = int(generator.integers(0, size - selected_count + 1))
+                selected = np.arange(
+                    cluster_start,
+                    cluster_start + selected_count,
+                )
+                remaining = np.concatenate(
+                    (
+                        np.arange(cluster_start),
+                        np.arange(cluster_start + selected_count, size),
+                    )
+                )
+                generator.shuffle(remaining)
+            else:
+                msg = f"unknown mask topology: {mask_topology}"
+                raise ValueError(msg)
+            if 2 * extra_count > remaining.size:
+                msg = "cannot construct disjoint marginal extras"
+                raise ValueError(msg)
+            first_mask[start + selected] = True
+            second_mask[start + selected] = True
+            first_mask[start + remaining[:extra_count]] = True
+            second_mask[start + remaining[extra_count : 2 * extra_count]] = True
 
     residual = generator.integers(1, 51, size=rows, dtype=np.int32)
     columns: dict[str, Any] = {
@@ -396,8 +483,10 @@ def run(
     }
     names = list(specifications)
     generator = random.Random(seed)
+    execution_order = []
     for _ in range(iterations):
         generator.shuffle(names)
+        execution_order.append(list(names))
         for name in names:
             gc.collect()
             specification = specifications[name]
@@ -424,6 +513,12 @@ def run(
         candidate_wall = query_summaries[name]["wall_seconds"]["median"]
         comparisons[name] = {
             "change_vs_baseline": candidate_wall / baseline_wall - 1,
+            "paired_wall_ratio_change": bootstrap_median_ratio_change(
+                samples[name]["wall_seconds"],
+                samples[baseline_name]["wall_seconds"],
+                resamples=bootstrap_resamples,
+                seed=seed,
+            ),
             "paired_median_wall_difference_seconds": bootstrap_median_difference(
                 samples[name]["wall_seconds"],
                 samples[baseline_name]["wall_seconds"],
@@ -448,6 +543,12 @@ def run(
                 ]
                 pairwise_comparisons[name][reference_name] = {
                     "change_vs_reference": candidate_wall / reference_wall - 1,
+                    "paired_wall_ratio_change": bootstrap_median_ratio_change(
+                        samples[name]["wall_seconds"],
+                        samples[reference_name]["wall_seconds"],
+                        resamples=bootstrap_resamples,
+                        seed=seed,
+                    ),
                     "paired_median_wall_difference_seconds": (
                         bootstrap_median_difference(
                             samples[name]["wall_seconds"],
@@ -465,6 +566,7 @@ def run(
             "queries": query_summaries,
             "comparisons": comparisons,
             "samples": samples,
+            "execution_order": execution_order,
             "pairwise_comparisons": pairwise_comparisons,
         },
         plans,
@@ -481,6 +583,11 @@ def parse_args() -> argparse.Namespace:
         "--relationship",
         choices=["independent", "nested", "negative"],
         default="independent",
+    )
+    parser.add_argument(
+        "--mask-topology",
+        choices=["bernoulli", "random", "clustered"],
+        default="bernoulli",
     )
     parser.add_argument("--residual-dtype", choices=["float", "int"], default="float")
     parser.add_argument("--payload-width", type=int, default=1)
@@ -593,6 +700,7 @@ def main() -> None:
             row_group_size=args.row_group_size,
             prefix_retention=args.prefix_retention,
             relationship=args.relationship,
+            mask_topology=args.mask_topology,
             payload_width=args.payload_width,
             payload_dtype=args.payload_dtype,
             seed=args.seed,
@@ -617,6 +725,10 @@ def main() -> None:
         auto_min_file_rows=args.auto_min_file_rows,
     )
     report = {
+        "provenance": {
+            "benchmark_sha256": sha256_file(Path(__file__)),
+            "runtime_binary_sha256": sha256_file(Path(pl._plr.__file__)),
+        },
         "environment": {
             "python": sys.version,
             "platform": platform.platform(),
@@ -631,6 +743,7 @@ def main() -> None:
             "prefix_retention": args.prefix_retention,
             "residual_retention": args.residual_retention,
             "relationship": args.relationship,
+            "mask_topology": args.mask_topology,
             "residual_dtype": args.residual_dtype,
             "payload_width": args.payload_width,
             "payload_dtype": args.payload_dtype,

@@ -1,0 +1,127 @@
+name: Issue 28402 x86 holdout
+
+on:
+  push:
+    branches:
+      - research/28402-capability-staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-28402-x86-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  holdout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    env:
+      UV_CACHE_DIR: /tmp/uv-cache
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Require x86 runner
+        run: test "$(uname -m)" = x86_64
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Create benchmark environment
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv --python 3.13
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+          uv pip install "maturin<=1.12.4" numpy patchelf
+          uv pip install --no-deps -e py-polars
+
+      - name: Record host and compiler
+        run: |
+          mkdir -p /tmp/phase3-effective-holdout
+          {
+            uname -a
+            lscpu
+            rustc -vV
+            cargo -vV
+            clang --version
+            python --version
+          } > /tmp/phase3-effective-holdout/environment.txt
+
+      - name: Build release runtime
+        run: make build-release
+
+      - name: Run frozen matrix
+        run: |
+          for seed in 38402 38403; do
+            .venv/bin/python research/issue_28402/capability_matrix.py \
+              --rows 4000000 \
+              --row-group-size 1000000 \
+              --retentions 0.1125,0.1375 \
+              --residual-retentions 0.1,0.9 \
+              --relationships independent \
+              --mask-topologies random,clustered \
+              --residual-dtypes float \
+              --threads 1 \
+              --payload-widths 8 \
+              --payload-dtypes float,string \
+              --residual-projections projected \
+              --warmups 3 \
+              --iterations 15 \
+              --bootstrap-resamples 5000 \
+              --fanout-min-task-values 1000000 \
+              --auto-max-speculative-values 1000000 \
+              --auto-fanout-min-task-values 1000000 \
+              --auto-min-file-rows 500000 \
+              --seed "$seed" \
+              --output-dir \
+                "/tmp/phase3-effective-holdout/seed-$seed" \
+              --summary \
+                "/tmp/phase3-effective-holdout/seed-$seed-summary.json" \
+              --curated-summary \
+                "/tmp/phase3-effective-holdout/seed-$seed-curated.json" \
+              > "/tmp/phase3-effective-holdout/seed-$seed.log"
+          done
+
+      - name: Validate frozen gate
+        run: |
+          cpu_model="$(
+            lscpu | awk -F: '/Model name/ {
+              sub(/^[[:space:]]+/, "", $2)
+              print $2
+              exit
+            }'
+          )"
+          .venv/bin/python \
+            research/issue_28402/phase3_effective_holdout_summary.py \
+            --report-root /tmp/phase3-effective-holdout/seed-38402 \
+            --report-root /tmp/phase3-effective-holdout/seed-38403 \
+            --base-commit \
+              c0dab4ed02a09af59f11a1f1e869004228ad4878 \
+            --hardware "$cpu_model; GitHub ubuntu-24.04 x86_64" \
+            --cache-regime "warm-cache repeated scans" \
+            --output /tmp/phase3-effective-holdout/summary.json
+          jq -e '
+            .gate.controlled_cell_count == 32 and
+            .gate.passed == 32 and
+            .gate.inconclusive == 0 and
+            .gate.failed == 0
+          ' /tmp/phase3-effective-holdout/summary.json
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-28402-x86-holdout
+          path: |
+            /tmp/phase3-effective-holdout/environment.txt
+            /tmp/phase3-effective-holdout/seed-*.log
+            /tmp/phase3-effective-holdout/seed-*/*.json
+            /tmp/phase3-effective-holdout/summary.json
+          if-no-files-found: error
+          retention-days: 14

@@ -4,6 +4,7 @@ import decimal
 import functools
 import io
 import math
+import os
 import subprocess
 import sys
 import warnings
@@ -3398,11 +3399,127 @@ def test_mixed_predicate_auto_rejects_ineligible_scan_28402(
     assert eligibility_events
     assert all(
         "file_rows=10000" in event
-        and "min_file_rows=500000" in event
+        and "effective_rows=10000" in event
+        and "min_effective_rows=500000" in event
         and "eligible=false" in event
         for event in eligibility_events
     )
     assert "POLARS_ISSUE_28402_SCHEDULE " not in trace
+
+
+@pytest.mark.parametrize(
+    ("case", "threads", "max_speculative_values", "expected_schedule"),
+    [
+        ("fanout", 1, 6_000, "fanout"),
+        ("materialized", 1, 2_000, "materialized"),
+        ("statistics_fallback", 1, 3_000, None),
+        ("pipeline_fallback", 2, 3_000, None),
+    ],
+)
+def test_mixed_predicate_auto_dispatch_28402(
+    tmp_path: Path,
+    case: str,
+    threads: int,
+    max_speculative_values: int,
+    expected_schedule: str | None,
+) -> None:
+    rows = 40_000
+    row_group_size = 10_000
+    row = pl.int_range(0, rows, eager=True)
+    if case == "statistics_fallback":
+        prefix_1 = pl.concat(
+            [
+                pl.Series(["keep"]).new_from_index(0, row_group_size),
+                pl.Series(["drop"]).new_from_index(0, rows - row_group_size),
+            ]
+        )
+    else:
+        prefix_1 = (row % 2).cast(pl.String)
+    path = tmp_path / f"mixed-predicate-auto-{case}.parquet"
+    pl.DataFrame(
+        {
+            "prefix_1": prefix_1,
+            "prefix_2": (row % 2).cast(pl.String),
+            "residual": (row % 101).cast(pl.Float64),
+            "payload": row,
+        }
+    ).write_parquet(path, row_group_size=row_group_size, statistics=True)
+
+    predicate_value = "keep" if case == "statistics_fallback" else "0"
+    code = f"""
+import os
+os.environ["POLARS_ISSUE_28402_CAPABILITY_STAGING"] = "auto"
+os.environ["POLARS_ISSUE_28402_AUTO_MAX_SPECULATIVE_VALUES"] = "{max_speculative_values}"
+os.environ["POLARS_ISSUE_28402_AUTO_MIN_FILE_ROWS"] = "20000"
+os.environ["POLARS_ISSUE_28402_DECODE_TRACE"] = "1"
+import polars as pl
+from polars.testing import assert_frame_equal
+path = {str(path)!r}
+query = (
+    pl.scan_parquet(path, parallel="prefiltered")
+    .filter(
+        (pl.col("prefix_1") == {predicate_value!r})
+        & (pl.col("prefix_2") == "0")
+        & pl.col("residual").is_between(20.0, 80.0)
+    )
+    .select("prefix_1", "residual", "payload")
+)
+os.environ.pop("POLARS_ISSUE_28402_CAPABILITY_STAGING")
+expected = query.collect(engine="streaming")
+os.environ["POLARS_ISSUE_28402_CAPABILITY_STAGING"] = "auto"
+actual = query.collect(engine="streaming")
+assert_frame_equal(actual, expected)
+"""
+    environment = os.environ.copy()
+    environment["POLARS_MAX_THREADS"] = str(threads)
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    eligibility_events = [
+        line
+        for line in result.stderr.splitlines()
+        if line.startswith("POLARS_ISSUE_28402_ELIGIBILITY ")
+    ]
+    assert eligibility_events
+
+    if case == "statistics_fallback":
+        assert all(
+            "file_rows=40000" in event
+            and "effective_rows=10000" in event
+            and "min_effective_rows=20000" in event
+            and "eligible=false" in event
+            for event in eligibility_events
+        )
+    elif case == "pipeline_fallback":
+        assert all(
+            "effective_rows=40000" in event
+            and "pipelines=2" in event
+            and "eligible=false" in event
+            for event in eligibility_events
+        )
+    else:
+        assert all(
+            "effective_rows=40000" in event
+            and "pipelines=1" in event
+            and "eligible=true" in event
+            for event in eligibility_events
+        )
+
+    schedule_events = [
+        line
+        for line in result.stderr.splitlines()
+        if line.startswith("POLARS_ISSUE_28402_SCHEDULE ")
+    ]
+    if expected_schedule is None:
+        assert schedule_events == []
+    else:
+        assert schedule_events
+        assert all(f"schedule={expected_schedule}" in event for event in schedule_events)
 
 
 @pytest.mark.parametrize("capability_mode", ["materialized", "fanout"])

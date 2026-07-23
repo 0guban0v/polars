@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::frame::DataFrame;
@@ -11,7 +12,7 @@ use polars_utils::IdxSize;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::{
-    Issue28402CapabilityMode, Issue28402CapabilityPlan, RowGroupDecoder, issue_28402_auto_eligible,
+    Issue28402CapabilityMode, Issue28402CapabilityPlan, RowGroupDecoder,
 };
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
@@ -44,7 +45,9 @@ impl ParquetReadImpl {
         let predicate = self.predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
 
-        let row_group_decoder = self.init_row_group_decoder();
+        let issue_28402_effective_scan_rows_state = Arc::new(OnceLock::new());
+        let row_group_decoder =
+            self.init_row_group_decoder(issue_28402_effective_scan_rows_state.clone());
         let row_group_decoder = Arc::new(row_group_decoder);
 
         let ideal_morsel_size = get_ideal_morsel_size();
@@ -159,6 +162,20 @@ impl ParquetReadImpl {
                 verbose,
             )
             .await?;
+
+            let effective_scan_rows = if normalized_pre_slice.is_some() {
+                0
+            } else {
+                issue_28402_effective_scan_rows(
+                    metadata.row_groups[row_group_slice.clone()]
+                        .iter()
+                        .map(|row_group| row_group.num_rows()),
+                    row_group_mask.as_ref(),
+                )
+            };
+            issue_28402_effective_scan_rows_state
+                .set(effective_scan_rows)
+                .expect("effective scan rows initialized once");
 
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),
@@ -318,7 +335,10 @@ impl ParquetReadImpl {
     /// This must be called AFTER the following have been initialized:
     /// * `self.projected_arrow_fields`
     /// * `self.physical_predicate`
-    pub(super) fn init_row_group_decoder(&mut self) -> RowGroupDecoder {
+    pub(super) fn init_row_group_decoder(
+        &mut self,
+        issue_28402_effective_scan_rows: Arc<OnceLock<usize>>,
+    ) -> RowGroupDecoder {
         let projected_arrow_fields = self.projected_arrow_fields.clone();
         let row_index = self.row_index.clone();
         let target_values_per_thread = self.config.target_values_per_thread;
@@ -410,7 +430,7 @@ impl ParquetReadImpl {
             );
             value
         });
-        let issue_28402_auto_min_file_rows = matches!(
+        let issue_28402_auto_min_effective_rows = matches!(
             issue_28402_capability_mode,
             Some(Issue28402CapabilityMode::Auto)
         )
@@ -425,22 +445,6 @@ impl ParquetReadImpl {
             );
             value
         });
-        let issue_28402_auto_eligible = issue_28402_auto_min_file_rows.is_some_and(|min_rows| {
-            issue_28402_auto_eligible(self.metadata.num_rows, min_rows, self.config.num_pipelines)
-        });
-        if matches!(
-            issue_28402_capability_mode,
-            Some(Issue28402CapabilityMode::Auto)
-        ) && std::env::var("POLARS_ISSUE_28402_DECODE_TRACE").as_deref() == Ok("1")
-        {
-            eprintln!(
-                "POLARS_ISSUE_28402_ELIGIBILITY file_rows={} min_file_rows={} pipelines={} eligible={}",
-                self.metadata.num_rows,
-                issue_28402_auto_min_file_rows.unwrap(),
-                self.config.num_pipelines,
-                issue_28402_auto_eligible,
-            );
-        }
         let fanout_max_tasks_per_row_group =
             if self.config.row_group_prefetch_size >= self.config.num_pipelines {
                 1
@@ -451,11 +455,8 @@ impl ParquetReadImpl {
                     .div_ceil(self.config.row_group_prefetch_size)
             };
         let issue_28402_capability_plan = issue_28402_capability_mode
-            .filter(|mode| {
-                column_predicate_shape_supported
-                    && !has_fixed_size_binary_predicate
-                    && (!matches!(mode, Issue28402CapabilityMode::Auto)
-                        || issue_28402_auto_eligible)
+            .filter(|_| {
+                column_predicate_shape_supported && !has_fixed_size_binary_predicate
             })
             .and_then(|mode| {
                 let predicate = predicate.as_ref()?;
@@ -520,6 +521,8 @@ impl ParquetReadImpl {
                         }),
                         auto_max_speculative_values:
                             issue_28402_auto_max_speculative_values,
+                        auto_min_effective_rows:
+                            issue_28402_auto_min_effective_rows,
                         fanout_max_tasks_per_row_group,
                     },
                 )
@@ -537,8 +540,25 @@ impl ParquetReadImpl {
             target_values_per_thread,
             issue_28304_adaptive_state: Default::default(),
             issue_28402_capability_plan,
+            issue_28402_effective_scan_rows,
+            issue_28402_file_rows: self.metadata.num_rows,
         }
     }
+}
+
+fn issue_28402_effective_scan_rows(
+    row_group_rows: impl ExactSizeIterator<Item = usize>,
+    skip_mask: Option<&Bitmap>,
+) -> usize {
+    debug_assert!(skip_mask.is_none_or(|mask| mask.len() == row_group_rows.len()));
+    row_group_rows
+        .enumerate()
+        .filter_map(|(index, rows)| {
+            skip_mask
+                .is_none_or(|mask| !mask.get_bit(index))
+                .then_some(rows)
+        })
+        .sum()
 }
 
 /// Returns 0..len in a Vec, excluding indices in `exclude`.
@@ -586,7 +606,6 @@ pub(crate) fn split_to_morsels(
 }
 
 mod tests {
-
     #[test]
     fn test_filtered_range() {
         use super::filtered_range;
@@ -597,6 +616,23 @@ mod tests {
         assert_eq!(
             filtered_range(&[1, 6], 7).collect::<Vec<_>>().as_slice(),
             &[0, 2, 3, 4, 5]
+        );
+    }
+
+    #[test]
+    fn test_issue_28402_effective_scan_rows() {
+        use super::issue_28402_effective_scan_rows;
+
+        let row_group_rows = [100_000, 200_000, 300_000, 400_000];
+        assert_eq!(
+            issue_28402_effective_scan_rows(row_group_rows.into_iter(), None),
+            1_000_000
+        );
+
+        let skip_mask = arrow::bitmap::Bitmap::from_iter([true, false, false, true]);
+        assert_eq!(
+            issue_28402_effective_scan_rows(row_group_rows.into_iter(), Some(&skip_mask)),
+            500_000
         );
     }
 }

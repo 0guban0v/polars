@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::Instant;
 
 use polars_async::executor::TaskPriority;
@@ -438,6 +438,7 @@ pub(super) struct Issue28402CapabilityPlan {
     pub(super) mode: Issue28402CapabilityMode,
     pub(super) fanout_min_task_values: Option<usize>,
     pub(super) auto_max_speculative_values: Option<usize>,
+    pub(super) auto_min_effective_rows: Option<usize>,
     pub(super) fanout_max_tasks_per_row_group: usize,
 }
 
@@ -455,6 +456,8 @@ pub(super) struct RowGroupDecoder {
     pub(super) target_values_per_thread: usize,
     pub(super) issue_28304_adaptive_state: Arc<Issue28304AdaptiveState>,
     pub(super) issue_28402_capability_plan: Option<Issue28402CapabilityPlan>,
+    pub(super) issue_28402_effective_scan_rows: Arc<OnceLock<usize>>,
+    pub(super) issue_28402_file_rows: usize,
 }
 
 impl RowGroupDecoder {
@@ -1570,9 +1573,42 @@ impl RowGroupDecoder {
         &self,
         row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
-        if row_group_data.slice.is_none()
-            && let Some(plan) = self.issue_28402_capability_plan.as_ref()
-        {
+        if let Some(plan) = self.issue_28402_capability_plan.as_ref() {
+            let auto_eligible = if matches!(plan.mode, Issue28402CapabilityMode::Auto) {
+                row_group_data.slice.is_none()
+                    && self.issue_28402_effective_scan_rows.get().is_some_and(
+                        |effective_scan_rows| {
+                            issue_28402_auto_eligible(
+                                *effective_scan_rows,
+                                plan.auto_min_effective_rows.unwrap(),
+                                self.num_pipelines,
+                            )
+                        },
+                    )
+            } else {
+                row_group_data.slice.is_none()
+            };
+            if matches!(plan.mode, Issue28402CapabilityMode::Auto)
+                && std::env::var("POLARS_ISSUE_28402_DECODE_TRACE").as_deref() == Ok("1")
+            {
+                eprintln!(
+                    "POLARS_ISSUE_28402_ELIGIBILITY file_rows={} effective_rows={} min_effective_rows={} pipelines={} unsliced={} eligible={}",
+                    self.issue_28402_file_rows,
+                    self.issue_28402_effective_scan_rows
+                        .get()
+                        .copied()
+                        .unwrap_or(0),
+                    plan.auto_min_effective_rows.unwrap(),
+                    self.num_pipelines,
+                    row_group_data.slice.is_none(),
+                    auto_eligible,
+                );
+            }
+            if !auto_eligible {
+                return self
+                    .row_group_data_to_df_prefiltered_default(row_group_data)
+                    .await;
+            }
             return match plan.mode {
                 Issue28402CapabilityMode::Selected => {
                     self.row_group_data_to_df_prefiltered_staged(
@@ -1620,6 +1656,14 @@ impl RowGroupDecoder {
             };
         }
 
+        self.row_group_data_to_df_prefiltered_default(row_group_data)
+            .await
+    }
+
+    async fn row_group_data_to_df_prefiltered_default(
+        &self,
+        row_group_data: RowGroupData,
+    ) -> PolarsResult<DataFrame> {
         if let Some(level) = Issue28304RollingLevel::from_env() {
             let decision = self.issue_28304_adaptive_state.choose_rolling(
                 &self.predicate_field_indices,

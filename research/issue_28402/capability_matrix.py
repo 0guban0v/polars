@@ -41,6 +41,7 @@ def run_benchmark(
     retention: float,
     residual_retention: float,
     relationship: str,
+    mask_topology: str,
     residual_dtype: str,
     payload_width: int,
     payload_dtype: str,
@@ -69,6 +70,8 @@ def run_benchmark(
         str(residual_retention),
         "--relationship",
         relationship,
+        "--mask-topology",
+        mask_topology,
         "--residual-dtype",
         residual_dtype,
         "--payload-width",
@@ -152,6 +155,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--retentions", default="0.01,0.05,0.25,0.6,0.9")
     parser.add_argument("--residual-retentions", default="0.6")
     parser.add_argument("--relationships", default="independent,nested,negative")
+    parser.add_argument("--mask-topologies", default="bernoulli")
     parser.add_argument("--residual-dtypes", default="float,int")
     parser.add_argument("--threads", default="1,8,16")
     parser.add_argument("--payload-widths", default="1")
@@ -195,6 +199,7 @@ def main() -> None:
     retentions = parse_float_csv(args.retentions)
     residual_retentions = parse_float_csv(args.residual_retentions)
     relationships = parse_csv(args.relationships)
+    mask_topologies = parse_csv(args.mask_topologies)
     residual_dtypes = parse_csv(args.residual_dtypes)
     threads = parse_int_csv(args.threads)
     payload_widths = parse_int_csv(args.payload_widths)
@@ -212,6 +217,12 @@ def main() -> None:
     )
     if set(relationships) - {"independent", "nested", "negative"}:
         msg = "unknown relationship"
+        raise ValueError(msg)
+    if set(mask_topologies) - {"bernoulli", "random", "clustered"}:
+        msg = "unknown mask topology"
+        raise ValueError(msg)
+    if set(mask_topologies) != {"bernoulli"} and relationships != ["independent"]:
+        msg = "exact mask topologies require only independent relationship"
         raise ValueError(msg)
     if set(residual_dtypes) - {"float", "int"}:
         msg = "unknown residual dtype"
@@ -238,63 +249,66 @@ def main() -> None:
     for retention in retentions:
         retention_label = str(retention).replace(".", "p")
         for relationship in relationships:
-            for payload_width in payload_widths:
-                for payload_dtype in payload_dtypes:
-                    data_stem = (
-                        f"r{retention_label}-{relationship}-"
-                        f"w{payload_width}-{payload_dtype}"
-                    )
-                    data_path = args.output_dir / f"{data_stem}.parquet"
-                    reuse_data = False
-                    for residual_retention in residual_retentions:
-                        residual_label = str(residual_retention).replace(".", "p")
-                        for residual_dtype in residual_dtypes:
-                            for residual_projection in residual_projections:
-                                for thread_count in threads:
-                                    result_path = args.output_dir / (
-                                        f"{data_stem}-rr{residual_label}-"
-                                        f"{residual_dtype}-{residual_projection}-"
-                                        f"t{thread_count}.json"
-                                    )
-                                    run_benchmark(
-                                        script=script,
-                                        output=result_path,
-                                        data_path=data_path,
-                                        rows=args.rows,
-                                        row_group_size=args.row_group_size,
-                                        retention=retention,
-                                        residual_retention=residual_retention,
-                                        relationship=relationship,
-                                        residual_dtype=residual_dtype,
-                                        payload_width=payload_width,
-                                        payload_dtype=payload_dtype,
-                                        residual_projection=residual_projection,
-                                        threads=thread_count,
-                                        warmups=args.warmups,
-                                        iterations=args.iterations,
-                                        bootstrap_resamples=args.bootstrap_resamples,
-                                        fanout_min_task_values=(
-                                            args.fanout_min_task_values
-                                        ),
-                                        auto_max_speculative_values=(
-                                            args.auto_max_speculative_values
-                                        ),
-                                        auto_fanout_min_task_values=(
-                                            args.auto_fanout_min_task_values
-                                        ),
-                                        auto_min_file_rows=args.auto_min_file_rows,
-                                        seed=args.seed,
-                                        reuse_data=reuse_data,
-                                    )
-                                    reuse_data = True
-                                    report = json.loads(result_path.read_text())
-                                    summaries.append(summarize(report, result_path))
+            for mask_topology in mask_topologies:
+                for payload_width in payload_widths:
+                    for payload_dtype in payload_dtypes:
+                        data_stem = (
+                            f"r{retention_label}-{relationship}-{mask_topology}-"
+                            f"w{payload_width}-{payload_dtype}"
+                        )
+                        data_path = args.output_dir / f"{data_stem}.parquet"
+                        reuse_data = False
+                        for residual_retention in residual_retentions:
+                            residual_label = str(residual_retention).replace(".", "p")
+                            for residual_dtype in residual_dtypes:
+                                for residual_projection in residual_projections:
+                                    for thread_count in threads:
+                                        result_path = args.output_dir / (
+                                            f"{data_stem}-rr{residual_label}-"
+                                            f"{residual_dtype}-{residual_projection}-"
+                                            f"t{thread_count}.json"
+                                        )
+                                        run_benchmark(
+                                            script=script,
+                                            output=result_path,
+                                            data_path=data_path,
+                                            rows=args.rows,
+                                            row_group_size=args.row_group_size,
+                                            retention=retention,
+                                            residual_retention=residual_retention,
+                                            relationship=relationship,
+                                            mask_topology=mask_topology,
+                                            residual_dtype=residual_dtype,
+                                            payload_width=payload_width,
+                                            payload_dtype=payload_dtype,
+                                            residual_projection=residual_projection,
+                                            threads=thread_count,
+                                            warmups=args.warmups,
+                                            iterations=args.iterations,
+                                            bootstrap_resamples=args.bootstrap_resamples,
+                                            fanout_min_task_values=(
+                                                args.fanout_min_task_values
+                                            ),
+                                            auto_max_speculative_values=(
+                                                args.auto_max_speculative_values
+                                            ),
+                                            auto_fanout_min_task_values=(
+                                                args.auto_fanout_min_task_values
+                                            ),
+                                            auto_min_file_rows=args.auto_min_file_rows,
+                                            seed=args.seed,
+                                            reuse_data=reuse_data,
+                                        )
+                                        reuse_data = True
+                                        report = json.loads(result_path.read_text())
+                                        summaries.append(summarize(report, result_path))
 
     summary = {
         "configuration": {
             "retentions": retentions,
             "residual_retentions": residual_retentions,
             "relationships": relationships,
+            "mask_topologies": mask_topologies,
             "residual_dtypes": residual_dtypes,
             "threads": threads,
             "payload_widths": payload_widths,
