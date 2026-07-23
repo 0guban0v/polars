@@ -392,6 +392,15 @@ impl ParquetReadImpl {
             ),
             Err(_) => None,
         };
+        let fanout_max_tasks_per_row_group =
+            if self.config.row_group_prefetch_size >= self.config.num_pipelines {
+                1
+            } else {
+                self.config
+                    .num_pipelines
+                    .saturating_mul(2)
+                    .div_ceil(self.config.row_group_prefetch_size)
+            };
         let issue_28402_capability_plan = issue_28402_capability_mode
             .filter(|_| column_predicate_shape_supported && !has_fixed_size_binary_predicate)
             .and_then(|mode| {
@@ -430,6 +439,32 @@ impl ParquetReadImpl {
                         supported,
                         residual,
                         mode,
+                        fanout_min_task_values: matches!(
+                            mode,
+                            Issue28402CapabilityMode::Fanout
+                        )
+                        .then(|| {
+                            std::env::var(
+                                "POLARS_ISSUE_28402_FANOUT_MIN_TASK_VALUES",
+                            )
+                            .ok()
+                            .map(|value| {
+                                value
+                                    .parse::<usize>()
+                                    .expect(
+                                        "POLARS_ISSUE_28402_FANOUT_MIN_TASK_VALUES must be a positive integer",
+                                    )
+                            })
+                        })
+                        .flatten()
+                        .map(|value| {
+                            assert!(
+                                value > 0,
+                                "POLARS_ISSUE_28402_FANOUT_MIN_TASK_VALUES must be positive"
+                            );
+                            value
+                        }),
+                        fanout_max_tasks_per_row_group,
                     },
                 )
             });

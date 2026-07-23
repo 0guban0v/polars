@@ -47,6 +47,7 @@ def run_benchmark(
     warmups: int,
     iterations: int,
     bootstrap_resamples: int,
+    fanout_min_task_values: str,
     seed: int,
     reuse_data: bool,
 ) -> None:
@@ -73,6 +74,8 @@ def run_benchmark(
         str(iterations),
         "--bootstrap-resamples",
         str(bootstrap_resamples),
+        "--fanout-min-task-values",
+        fanout_min_task_values,
         "--seed",
         str(seed),
         "--data-path",
@@ -96,6 +99,7 @@ def summarize(report: dict[str, Any], result_path: Path) -> dict[str, Any]:
         "baseline": report["baseline"],
         "queries": report["queries"],
         "comparisons": report["comparisons"],
+        "pairwise_comparisons": report["pairwise_comparisons"],
         "result_path": result_path.name,
     }
 
@@ -116,6 +120,7 @@ def curate(summary: dict[str, Any]) -> dict[str, Any]:
                     for name, metrics in run["queries"].items()
                 },
                 "comparisons": run["comparisons"],
+                "pairwise_comparisons": run["pairwise_comparisons"],
             }
             for run in summary["runs"]
         ],
@@ -135,6 +140,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmups", type=int, default=2)
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--bootstrap-resamples", type=int, default=2_000)
+    parser.add_argument(
+        "--fanout-min-task-values",
+        default="",
+        help="comma-separated fanout-local task sizes compared within each run",
+    )
     parser.add_argument("--seed", type=int, default=28402)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--summary", type=Path)
@@ -150,6 +160,11 @@ def main() -> None:
     threads = parse_int_csv(args.threads)
     payload_widths = parse_int_csv(args.payload_widths)
     residual_projections = parse_csv(args.residual_projections)
+    fanout_min_task_values = (
+        parse_int_csv(args.fanout_min_task_values)
+        if args.fanout_min_task_values
+        else []
+    )
     if set(relationships) - {"independent", "nested", "negative"}:
         msg = "unknown relationship"
         raise ValueError(msg)
@@ -192,6 +207,7 @@ def main() -> None:
                                 warmups=args.warmups,
                                 iterations=args.iterations,
                                 bootstrap_resamples=args.bootstrap_resamples,
+                                fanout_min_task_values=args.fanout_min_task_values,
                                 seed=args.seed,
                                 reuse_data=reuse_data,
                             )
@@ -212,6 +228,7 @@ def main() -> None:
             "warmups": args.warmups,
             "iterations": args.iterations,
             "bootstrap_resamples": args.bootstrap_resamples,
+            "fanout_min_task_values": fanout_min_task_values,
             "seed": args.seed,
         },
         "runs": summaries,

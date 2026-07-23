@@ -3261,12 +3261,22 @@ def test_selected_predicate_dense_and_empty_input_28304(
     assert_frame_equal(actual, expected)
 
 
-@pytest.mark.parametrize("capability_mode", ["selected", "materialized", "fanout"])
+@pytest.mark.parametrize(
+    ("capability_mode", "fanout_min_task_values"),
+    [
+        ("selected", None),
+        ("materialized", None),
+        ("fanout", None),
+        ("fanout", 1),
+    ],
+    ids=["selected", "materialized", "fanout", "fanout-local"],
+)
 def test_mixed_predicate_capability_staging_28402(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
     capability_mode: str,
+    fanout_min_task_values: int | None,
 ) -> None:
     rows = 10_000
     row_group_size = 1_000
@@ -3298,6 +3308,11 @@ def test_mixed_predicate_capability_staging_28402(
         "POLARS_ISSUE_28402_CAPABILITY_STAGING",
         capability_mode,
     )
+    if fanout_min_task_values is not None:
+        plmonkeypatch.setenv(
+            "POLARS_ISSUE_28402_FANOUT_MIN_TASK_VALUES",
+            str(fanout_min_task_values),
+        )
     plmonkeypatch.setenv("POLARS_ISSUE_28402_DECODE_TRACE", "1")
     actual = query.collect(engine="streaming")
     trace = capfd.readouterr().err
@@ -3319,6 +3334,19 @@ def test_mixed_predicate_capability_staging_28402(
         )
         == row_groups
     )
+    filter_events = [
+        line
+        for line in trace.splitlines()
+        if line.startswith("POLARS_ISSUE_28402_FILTER ")
+    ]
+    if fanout_min_task_values is None:
+        assert filter_events == []
+    else:
+        assert len(filter_events) == row_groups
+        assert all(
+            "max_tasks=" in event and "min_task_values=1" in event
+            for event in filter_events
+        )
 
 
 @pytest.mark.parametrize("capability_mode", ["materialized", "fanout"])

@@ -2,7 +2,7 @@
 
 Date: 2026-07-22
 Branch: `research/28402-capability-staging`
-Base: `cfca393a24`
+Base: `3b96397da8`
 
 ## Question
 
@@ -35,6 +35,19 @@ reader instead decodes residual and projected payload concurrently under
 supported-prefix mask, evaluates residual once, then filters compact columns.
 Fanout does not reconstruct full-row mask because no later decode needs it.
 
+Optional fanout-local sizing partitions compact-column filtering by observed
+work:
+
+```text
+work = compact rows * compact columns
+work tasks = ceil(work / minimum task values)
+row-group task cap = ceil(2 * pool width / configured row-group prefetch capacity)
+```
+
+If in-flight row groups already meet pool width, cap is one task per row
+group. Actual task count is minimum of work tasks, cap, and column count. This
+changes only final in-memory filtering, not decode plan.
+
 OR, multi-column, nested, mapped, row-index, partial-slice, external-constant,
 fallible, and non-elementwise cases keep current path. Environment variable is
 required; default execution is unchanged.
@@ -50,7 +63,7 @@ Focused suite covers:
 - multi-column expression fallback;
 - existing #28304 staged-reader cases.
 
-Final run: 19 passed. Equality and decode trace are both checked because output
+Final run: 20 passed. Equality and decode trace are both checked because output
 equality alone cannot detect duplicate decode.
 
 Structured trace on 25,000-row groups showed supported predicates reading full
@@ -126,6 +139,49 @@ All fanout intervals excluded zero. Dense wide case that made slice reference
 2.1% slower at one thread improved 2.3% natively. At 8 and 16 threads fanout
 remained 10–13% behind slice while still improving roughly 11% over fallback.
 
+## Fanout-local task sizing
+
+Dense/wide threshold sweep used four 1M-row groups, 60% prefix retention,
+eight payload columns, 30 rotated measurements, and 8/16 threads. Minimum task
+values from 0.5M through 2M closed default fanout gap. 1M was retained for
+controls:
+
+- 8 threads: 6.6% faster than default fanout, 0.1% behind slice;
+- 16 threads: 10.1% faster than default fanout, 1.2% behind slice.
+
+Row-group capacity changed useful granularity. At 16 threads, one row group
+benefited roughly 13% from local sizing. Expanding every one of 16 in-flight
+row groups regressed default fanout. Final cap keeps one task per row group
+when configured capacity already fills pool, and otherwise targets roughly two
+filter tasks per worker across available row groups. With final cap,
+16-row-group local result was statistically indistinguishable from default
+fanout and 3% faster than slice.
+
+Configured prefetch capacity is upper bound, not active row-group measurement.
+Byte budget, skipped groups, other files, or pipeline timing can reduce actual
+supply. Current control establishes mechanism on single-file runs.
+
+Final 24-case confirmation used four 1M-row groups, 1/5/60/90% retention,
+one/eight payload columns, 1/8/16 threads, 20 rotated measurements, and 1M
+minimum task values:
+
+| Prefix retained | Payload columns | 1 thread | 8 threads | 16 threads |
+|---:|---:|---:|---:|---:|
+| 1% | 1 | -28.6% | -27.7% | -13.9% |
+| 1% | 8 | -22.6% | -26.4% | -14.7% |
+| 5% | 1 | -30.4% | -31.7% | -21.6% |
+| 5% | 8 | -22.8% | -28.5% | -23.5% |
+| 60% | 1 | -25.6% | -29.3% | -21.1% |
+| 60% | 8 | -1.9% | -16.1% | -18.9% |
+| 90% | 1 | -22.1% | -29.4% | -20.6% |
+| 90% | 8 | +7.8% | -5.8% | -17.7% |
+
+Values are wall change against global fallback. Intervals were below zero in
+23 of 24 cases. Local sizing had no statistically significant regression
+against default fanout; median CPU change was effectively zero. Remaining
+regression is fanout schedule itself: at 90%/eight payload/one thread,
+sequential materialization improved roughly 10% while fanout regressed.
+
 ## Issue-like confirmation
 
 Ten-million-row, ten-row-group, 16-thread run used roughly 7.1% supported
@@ -169,24 +225,38 @@ row-group supply as sole cause.
 
 - Semantics: pass for tested scope.
 - Decode count: pass.
-- Performance: pass for tested mixed-capability matrix; fanout won all screen
-  and confirmation cases.
-- Native parity: pass for issue-like and median screen; incomplete for dense,
-  wide, high-thread cases.
-- Simplicity: capability fanout needs no learned selector in tested region.
+- Filter task sizing: pass; it closes targeted high-thread gap without
+  significant regression against default fanout.
+- Performance: fail for unconditional fanout; extended dense/wide one-thread
+  case regressed roughly 8%.
+- Native parity: pass for targeted four-row-group dense/wide high-thread case;
+  slice is not universal winner when row-group capacity or one-thread payload
+  work changes.
+- Simplicity: no learned selector is justified, but schedule needs bounded
+  runtime guard.
 
-Outcome is broad tested win, not production proof. Do not make #28485
+Outcome is broad conditional win, not production rule. Do not make #28485
 dependency claim from this branch.
 
 ## Real next experiment
 
-Profile remaining dense/wide high-thread parity gap before adding policy.
-Then test work-conserving frontier: residual decode/eval runs at high priority;
-payload tasks use prefix speculatively only when worker would otherwise idle,
-or final mask when already available. Each column still decodes once.
+Test one-thread schedule guard after exact prefix mask is known:
 
-Paired-block prediction is later fallback only if optimized scheduling
-reintroduces conditional regressions.
+```text
+prefix payload work = prefix rows * payload columns
+small work -> fanout
+large work -> sequential materialization
+```
+
+Candidate boundary is 1M values because same threshold already defines useful
+filter task. Do not adopt it from current data. Vary payload width 1/2/4/8,
+prefix retention, residual selectivity, payload type, and row-group size.
+Require guard to retain sparse fanout gains and select materialization for
+dense/wide one-thread case without regression.
+
+At multiple threads, keep capacity-aware fanout unless controls find another
+fallback regression. Paired-block prediction remains later fallback only if
+observable work guard cannot bound loss.
 
 ## Limits
 

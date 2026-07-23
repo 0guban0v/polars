@@ -187,7 +187,10 @@ def make_query(
 
 
 def configure_environment(
-    *, capability_mode: str | None, stage_spec: str | None
+    *,
+    capability_mode: str | None,
+    stage_spec: str | None,
+    fanout_min_task_values: int | None = None,
 ) -> None:
     if capability_mode is not None:
         os.environ["POLARS_ISSUE_28402_CAPABILITY_STAGING"] = capability_mode
@@ -197,6 +200,12 @@ def configure_environment(
         os.environ.pop("POLARS_ISSUE_28304_STAGES", None)
     else:
         os.environ["POLARS_ISSUE_28304_STAGES"] = stage_spec
+    if fanout_min_task_values is None:
+        os.environ.pop("POLARS_ISSUE_28402_FANOUT_MIN_TASK_VALUES", None)
+    else:
+        os.environ["POLARS_ISSUE_28402_FANOUT_MIN_TASK_VALUES"] = str(
+            fanout_min_task_values
+        )
     os.environ.pop("POLARS_ISSUE_28304_ADAPTIVE", None)
     os.environ.pop("POLARS_ISSUE_28304_ROLLING_POLICY", None)
 
@@ -206,8 +215,13 @@ def execute(
     *,
     capability_mode: str | None = None,
     stage_spec: str | None = None,
+    fanout_min_task_values: int | None = None,
 ) -> tuple[tuple[Any, ...], float, float]:
-    configure_environment(capability_mode=capability_mode, stage_spec=stage_spec)
+    configure_environment(
+        capability_mode=capability_mode,
+        stage_spec=stage_spec,
+        fanout_min_task_values=fanout_min_task_values,
+    )
     wall_start = time.perf_counter_ns()
     cpu_start = time.process_time_ns()
     result = query.collect(engine="streaming").row(0)
@@ -225,6 +239,7 @@ def run(
     iterations: int,
     seed: int,
     bootstrap_resamples: int,
+    fanout_min_task_values: Sequence[int],
 ) -> tuple[dict[str, Any], dict[str, str]]:
     blocked_query = make_query(
         path,
@@ -240,35 +255,52 @@ def run(
     )
     if residual_dtype == "float":
         specifications = {
-            "global_fallback": (pushed_query, None, None),
-            "capability_selected": (pushed_query, "selected", None),
-            "capability_materialized": (pushed_query, "materialized", None),
-            "capability_fanout": (pushed_query, "fanout", None),
-            "slice_blocked": (blocked_query, None, None),
+            "global_fallback": (pushed_query, None, None, None),
+            "capability_selected": (pushed_query, "selected", None, None),
+            "capability_materialized": (pushed_query, "materialized", None, None),
+            "capability_fanout": (pushed_query, "fanout", None, None),
+            **{
+                f"capability_fanout_local_{task_values}": (
+                    pushed_query,
+                    "fanout",
+                    None,
+                    task_values,
+                )
+                for task_values in fanout_min_task_values
+            },
+            "slice_blocked": (blocked_query, None, None, None),
         }
         baseline_name = "global_fallback"
     else:
         specifications = {
-            "all_at_once": (pushed_query, None, None),
-            "forced_staged": (pushed_query, None, "c1,c2|c_i64"),
-            "slice_blocked": (blocked_query, None, None),
+            "all_at_once": (pushed_query, None, None, None),
+            "forced_staged": (pushed_query, None, "c1,c2|c_i64", None),
+            "slice_blocked": (blocked_query, None, None, None),
         }
         baseline_name = "all_at_once"
 
     plans = {}
-    for name, (query, capability_mode, stage_spec) in specifications.items():
+    for (
+        name,
+        (query, capability_mode, stage_spec, task_values),
+    ) in specifications.items():
         configure_environment(
             capability_mode=capability_mode,
             stage_spec=stage_spec,
+            fanout_min_task_values=task_values,
         )
         plans[name] = query.explain(optimized=True, engine="streaming")
 
     expected: tuple[Any, ...] | None = None
-    for name, (query, capability_mode, stage_spec) in specifications.items():
+    for (
+        name,
+        (query, capability_mode, stage_spec, task_values),
+    ) in specifications.items():
         result, _, _ = execute(
             query,
             capability_mode=capability_mode,
             stage_spec=stage_spec,
+            fanout_min_task_values=task_values,
         )
         if expected is None:
             expected = result
@@ -277,11 +309,12 @@ def run(
             raise AssertionError(msg)
 
     for _ in range(warmups):
-        for query, capability_mode, stage_spec in specifications.values():
+        for query, capability_mode, stage_spec, task_values in specifications.values():
             execute(
                 query,
                 capability_mode=capability_mode,
                 stage_spec=stage_spec,
+                fanout_min_task_values=task_values,
             )
 
     samples: dict[str, dict[str, list[float]]] = {
@@ -293,11 +326,12 @@ def run(
         generator.shuffle(names)
         for name in names:
             gc.collect()
-            query, capability_mode, stage_spec = specifications[name]
+            query, capability_mode, stage_spec, task_values = specifications[name]
             _, wall_seconds, cpu_seconds = execute(
                 query,
                 capability_mode=capability_mode,
                 stage_spec=stage_spec,
+                fanout_min_task_values=task_values,
             )
             samples[name]["wall_seconds"].append(wall_seconds)
             samples[name]["cpu_seconds"].append(cpu_seconds)
@@ -321,6 +355,28 @@ def run(
                 seed=seed,
             ),
         }
+    pairwise_comparisons = {}
+    if residual_dtype == "float":
+        for name in specifications:
+            if not name.startswith("capability_fanout_local_"):
+                continue
+            pairwise_comparisons[name] = {}
+            for reference_name in ("capability_fanout", "slice_blocked"):
+                candidate_wall = query_summaries[name]["wall_seconds"]["median"]
+                reference_wall = query_summaries[reference_name]["wall_seconds"][
+                    "median"
+                ]
+                pairwise_comparisons[name][reference_name] = {
+                    "change_vs_reference": candidate_wall / reference_wall - 1,
+                    "paired_median_wall_difference_seconds": (
+                        bootstrap_median_difference(
+                            samples[name]["wall_seconds"],
+                            samples[reference_name]["wall_seconds"],
+                            resamples=bootstrap_resamples,
+                            seed=seed,
+                        )
+                    ),
+                }
 
     return (
         {
@@ -329,6 +385,7 @@ def run(
             "queries": query_summaries,
             "comparisons": comparisons,
             "samples": samples,
+            "pairwise_comparisons": pairwise_comparisons,
         },
         plans,
     )
@@ -354,6 +411,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmups", type=int, default=2)
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--bootstrap-resamples", type=int, default=2_000)
+    parser.add_argument(
+        "--fanout-min-task-values",
+        default="",
+        help="comma-separated fanout-local task sizes to compare in same run",
+    )
     parser.add_argument("--seed", type=int, default=28402)
     parser.add_argument("--data-path", type=Path)
     parser.add_argument("--reuse-data", action="store_true")
@@ -369,6 +431,17 @@ def main() -> None:
         raise ValueError(msg)
     if args.iterations < 1 or args.bootstrap_resamples < 1:
         msg = "iterations and bootstrap resamples must be positive"
+        raise ValueError(msg)
+    fanout_min_task_values = [
+        int(value.strip())
+        for value in args.fanout_min_task_values.split(",")
+        if value.strip()
+    ]
+    if any(value < 1 for value in fanout_min_task_values):
+        msg = "--fanout-min-task-values must contain positive integers"
+        raise ValueError(msg)
+    if len(fanout_min_task_values) != len(set(fanout_min_task_values)):
+        msg = "--fanout-min-task-values must not contain duplicates"
         raise ValueError(msg)
 
     temporary_directory: tempfile.TemporaryDirectory[str] | None = None
@@ -404,6 +477,7 @@ def main() -> None:
         iterations=args.iterations,
         seed=args.seed,
         bootstrap_resamples=args.bootstrap_resamples,
+        fanout_min_task_values=fanout_min_task_values,
     )
     report = {
         "environment": {
@@ -425,6 +499,7 @@ def main() -> None:
             "warmups": args.warmups,
             "iterations": args.iterations,
             "bootstrap_resamples": args.bootstrap_resamples,
+            "fanout_min_task_values": fanout_min_task_values,
             "seed": args.seed,
         },
         "observed_selectivity": rates,
@@ -438,7 +513,11 @@ def main() -> None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n")
 
-    configure_environment(capability_mode=None, stage_spec=None)
+    configure_environment(
+        capability_mode=None,
+        stage_spec=None,
+        fanout_min_task_values=None,
+    )
     if temporary_directory is not None:
         temporary_directory.cleanup()
 

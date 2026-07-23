@@ -435,6 +435,8 @@ pub(super) struct Issue28402CapabilityPlan {
     pub(super) supported: Vec<usize>,
     pub(super) residual: Vec<usize>,
     pub(super) mode: Issue28402CapabilityMode,
+    pub(super) fanout_min_task_values: Option<usize>,
+    pub(super) fanout_max_tasks_per_row_group: usize,
 }
 
 pub(super) struct RowGroupDecoder {
@@ -722,6 +724,56 @@ async fn filter_cols(
     }
 
     let cols_per_thread = calc_cols_per_thread(cols[0].len(), target_values_per_thread);
+    filter_cols_with_granularity(cols, mask, cols_per_thread).await
+}
+
+async fn filter_cols_work_sized(
+    cols: Vec<Column>,
+    mask: &BooleanChunked,
+    max_tasks: usize,
+    min_task_values: usize,
+) -> PolarsResult<Vec<Column>> {
+    if cols.is_empty() {
+        return Ok(cols);
+    }
+
+    let cols_per_thread =
+        calc_cols_per_thread_work_sized(cols[0].len(), cols.len(), max_tasks, min_task_values);
+
+    if std::env::var("POLARS_ISSUE_28402_DECODE_TRACE").as_deref() == Ok("1") {
+        eprintln!(
+            "POLARS_ISSUE_28402_FILTER rows={} columns={} tasks={} max_tasks={} min_task_values={}",
+            cols[0].len(),
+            cols.len(),
+            cols.len().div_ceil(cols_per_thread),
+            max_tasks,
+            min_task_values,
+        );
+    }
+
+    filter_cols_with_granularity(cols, mask, cols_per_thread).await
+}
+
+fn calc_cols_per_thread_work_sized(
+    n_rows_per_col: usize,
+    n_cols: usize,
+    max_tasks: usize,
+    min_task_values: usize,
+) -> usize {
+    let total_values = n_rows_per_col.saturating_mul(n_cols);
+    let num_tasks = total_values
+        .div_ceil(min_task_values)
+        .min(max_tasks)
+        .min(n_cols)
+        .max(1);
+    n_cols.div_ceil(num_tasks)
+}
+
+async fn filter_cols_with_granularity(
+    cols: Vec<Column>,
+    mask: &BooleanChunked,
+    cols_per_thread: usize,
+) -> PolarsResult<Vec<Column>> {
     let mut out_vec = Vec::with_capacity(cols.len());
     let cols = Arc::new(cols);
     let mask = mask.clone();
@@ -1136,6 +1188,8 @@ impl RowGroupDecoder {
         supported: Vec<usize>,
         residual: Vec<usize>,
         fanout_payload: bool,
+        fanout_min_task_values: Option<usize>,
+        fanout_max_tasks_per_row_group: usize,
     ) -> PolarsResult<DataFrame> {
         debug_assert!(row_group_data.slice.is_none());
         debug_assert!(self.row_index.is_none());
@@ -1347,12 +1401,21 @@ impl RowGroupDecoder {
         if fanout_payload {
             live_columns.extend(fanout_payload_columns);
             live_columns.sort_unstable_by_key(|(field_index, _)| *field_index);
-            let output = filter_cols(
-                live_columns.into_iter().map(|(_, column)| column).collect(),
-                &residual_mask,
-                self.target_values_per_thread,
-            )
-            .await?;
+            let live_columns = live_columns.into_iter().map(|(_, column)| column).collect();
+            let output = match fanout_min_task_values {
+                Some(min_task_values) => {
+                    filter_cols_work_sized(
+                        live_columns,
+                        &residual_mask,
+                        fanout_max_tasks_per_row_group,
+                        min_task_values,
+                    )
+                    .await?
+                },
+                None => {
+                    filter_cols(live_columns, &residual_mask, self.target_values_per_thread).await?
+                },
+            };
             return Ok(unsafe { DataFrame::new_unchecked(residual_bitmap.set_bits(), output) });
         }
 
@@ -1482,6 +1545,8 @@ impl RowGroupDecoder {
                         plan.supported.clone(),
                         plan.residual.clone(),
                         false,
+                        None,
+                        1,
                     )
                     .await
                 },
@@ -1491,6 +1556,8 @@ impl RowGroupDecoder {
                         plan.supported.clone(),
                         plan.residual.clone(),
                         true,
+                        plan.fanout_min_task_values,
+                        plan.fanout_max_tasks_per_row_group,
                     )
                     .await
                 },
@@ -1930,7 +1997,28 @@ mod tests {
     #[cfg(test)]
     use super::{
         Bitmap, Issue28304AdaptiveState, Issue28304PredicateObservation, Issue28304RollingLevel,
+        calc_cols_per_thread_work_sized,
     };
+
+    #[test]
+    fn test_issue_28402_work_sized_filter_granularity() {
+        assert_eq!(
+            calc_cols_per_thread_work_sized(600_000, 11, 4, 1_000_000),
+            3
+        );
+        assert_eq!(
+            calc_cols_per_thread_work_sized(600_000, 11, 1, 1_000_000),
+            11
+        );
+        assert_eq!(
+            calc_cols_per_thread_work_sized(50_000, 11, 16, 1_000_000),
+            11
+        );
+        assert_eq!(
+            calc_cols_per_thread_work_sized(600_000, 11, 16, 1_000_000),
+            2
+        );
+    }
 
     #[cfg(test)]
     fn rolling_observations() -> Vec<Issue28304PredicateObservation> {

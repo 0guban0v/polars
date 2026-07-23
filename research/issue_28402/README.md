@@ -24,7 +24,7 @@ is unchanged.
 
 ## Result
 
-Native fanout is stable win in tested mixed-capability region.
+Native fanout is broad win, but not unconditional rule.
 
 Final screen contained 90 Float64 cases across prefix retention, predicate
 relationship, projection, and thread count. Fanout improved all 90 by roughly
@@ -33,8 +33,14 @@ relationship, projection, and thread count. Fanout improved all 90 by roughly
 
 Ten-million-row issue-like case improved 48.7% at 16 threads and was within
 0.5% of slice-blocked reference. Native fanout median gap to reference was
-1.2% in screen. Dense, wide, 8–16-thread cases remain 10–13% behind reference
-despite retaining roughly 11% win over fallback.
+1.2% in screen.
+
+Work- and row-group-capacity-aware final filtering closes measured dense/wide
+8–16-thread gap to roughly 0–1%. Extended 24-case confirmation improved 23
+cases against fallback. One case regressed: 90% prefix retention, eight payload
+columns, one thread was roughly 8% slower. Sequential materialization improved
+that case roughly 10%, so remaining problem is schedule choice at one thread,
+not final-filter task supply.
 
 Mixed-capability consumer does not need PR #28485 selected-decode primitive.
 
@@ -63,6 +69,7 @@ POLARS_MAX_THREADS=16 uv run python \
   --warmups 2 \
   --iterations 20 \
   --bootstrap-resamples 5000 \
+  --fanout-min-task-values 1000000 \
   --output /private/tmp/issue-28402.json
 ```
 
@@ -90,6 +97,7 @@ results, rotates plan order, and records wall and process CPU samples.
 POLARS_ISSUE_28402_CAPABILITY_STAGING=selected
 POLARS_ISSUE_28402_CAPABILITY_STAGING=materialized
 POLARS_ISSUE_28402_CAPABILITY_STAGING=fanout
+POLARS_ISSUE_28402_FANOUT_MIN_TASK_VALUES=1000000
 POLARS_ISSUE_28402_DECODE_TRACE=1
 POLARS_ISSUE_28304_TRACE=1
 ```
@@ -100,6 +108,9 @@ POLARS_ISSUE_28304_TRACE=1
   residual expression against compact DataFrame.
 - `fanout` decodes residual and projected payload concurrently under prefix,
   evaluates residual once, then filters compact columns.
+- fanout minimum task values enables local filter sizing. Task count is bounded
+  by compact values, columns, pool width, and configured row-group prefetch
+  capacity. Capacity is upper bound, not active row-group measurement.
 - decode trace counts predicate and projected-column decodes.
 - structured trace records stage rows, duration, and overlap.
 
@@ -118,5 +129,7 @@ POLARS_ISSUE_28304_TRACE=1
 - `results/fanout-core-confirmation-curated.json`: sparse/dense,
   narrow/wide fanout confirmation.
 - `results/fanout-issue-like.json`: 10-million-row issue-like confirmation.
+- `results/fanout-local-controls-curated.json`: 24-case work- and
+  row-group-capacity-aware filter confirmation.
 
 Generated Parquet files and intermediate matrix output stay outside repository.
