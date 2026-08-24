@@ -137,6 +137,13 @@ jobs:
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
 
+      - name: Run Windows cloud access-violation diagnostic
+        if: github.event_name == 'pull_request' && matrix.os == 'windows-latest'
+        env:
+          POLARS_AUTO_STREAMING: ${{ matrix.auto_new_streaming && '1' || '0' }}
+          POLARS_TIMEOUT_MS: 60000
+        run: pytest -n 4 -s -vv tests/unit/io/cloud/test_windows_cloud_access_violation_diagnostic.py
+
       - name: Run tests
         if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
         env:
