@@ -137,12 +137,42 @@ jobs:
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
 
-      - name: Run Windows cloud access-violation diagnostic
+      - name: Run Windows cloud timeout/xdist controls
         if: github.event_name == 'pull_request' && matrix.os == 'windows-latest'
         env:
           POLARS_AUTO_STREAMING: ${{ matrix.auto_new_streaming && '1' || '0' }}
-          POLARS_TIMEOUT_MS: 60000
-        run: pytest -o addopts="" -n 4 -s -vv tests/unit/io/cloud/test_windows_cloud_access_violation_diagnostic.py
+        shell: bash
+        run: |
+          set +e
+          TEST="tests/unit/io/cloud/test_credential_provider.py::test_credential_provider_aws_endpoint_url_scan_no_parameters"
+
+          run_control() {
+            local name="$1"
+            local timeout_ms="$2"
+            local workers="$3"
+            local retries="$4"
+            local init_backoff_ms="$5"
+            local max_backoff_ms="$6"
+            local retry_timeout_ms="$7"
+
+            echo "::group::$name"
+            POLARS_TIMEOUT_MS="$timeout_ms" \
+            POLARS_CLOUD_MAX_RETRIES="$retries" \
+            POLARS_CLOUD_RETRY_INIT_BACKOFF_MS="$init_backoff_ms" \
+            POLARS_CLOUD_RETRY_MAX_BACKOFF_MS="$max_backoff_ms" \
+            POLARS_CLOUD_RETRY_TIMEOUT_MS="$retry_timeout_ms" \
+              pytest -o addopts="" -n "$workers" -s -vv "$TEST"
+            local status=$?
+            echo "$name status: $status"
+            echo "::endgroup::"
+          }
+
+          run_control old-60s-direct 60000 0 2 100 15000 10000
+          run_control current-60s-direct 60000 0 8 250 5000 30000
+          run_control current-60s-xdist 60000 1 8 250 5000 30000
+          run_control current-120s-direct 120000 0 8 250 5000 30000
+
+          exit 0
 
       - name: Run tests
         if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
